@@ -38,7 +38,7 @@ const VISION_API_TIMEOUT_MS = parseInt(process.env.VISION_API_TIMEOUT_MS) || 100
 const MIN_CONFIDENCE_THRESHOLD = parseInt(process.env.MIN_CONFIDENCE_THRESHOLD) || 60; // 60%
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -67,7 +67,7 @@ const getOptionsStringForSimpleArray = (optionsArray) => {
 // Convert file to text
 async function convertFileToText(storagePath) {
   console.log(`[convertFileToText] Attempting to download from raw-cvs bucket: ${storagePath}`);
-  console.log(`[convertFileToText] Supabase URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'NOT SET'}`);
+  console.log(`[convertFileToText] Supabase URL: ${process.env.SUPABASE_URL ? 'SET' : 'NOT SET'}`);
   console.log(`[convertFileToText] Service Role Key: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SET (length: ' + process.env.SUPABASE_SERVICE_ROLE_KEY.length + ')' : 'NOT SET'}`);
 
   const { data, error } = await supabase.storage.from('raw-cvs').download(storagePath);
