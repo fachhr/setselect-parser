@@ -1155,7 +1155,20 @@ app.post('/api/v1/parse', (req, res, next) => {
   try {
     await supabase.from('cv_parsing_jobs').update({ status: 'processing' }).eq('id', jobId);
 
-    // For Silvia's List: Extract userId (profileId) from storagePath
+    // Fetch profile_id from cv_parsing_jobs record
+    const { data: jobRecord, error: jobFetchError } = await supabase
+      .from('cv_parsing_jobs')
+      .select('profile_id')
+      .eq('id', jobId)
+      .single();
+
+    if (jobFetchError || !jobRecord) {
+      throw new Error(`Failed to fetch job record: ${jobFetchError?.message || 'Job not found'}`);
+    }
+
+    const profileId = jobRecord.profile_id;
+
+    // For Silvia's List: Extract userId from storagePath for profile picture
     // Path format: {profileId}/cv.{ext}
     const match = storagePath.match(/^([^\/]+)\//);
     const userId = match ? match[1] : 'unknown';
