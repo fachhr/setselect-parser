@@ -1203,11 +1203,17 @@ app.post('/api/v1/parse', (req, res, next) => {
       extractedData.profile_picture_storage_path = profilePicturePath;
     }
 
-    await supabase.from('cv_parsing_jobs').update({
+    // Update job status to completed with extracted data
+    const { error: updateError } = await supabase.from('cv_parsing_jobs').update({
       status: 'completed',
       extracted_data: extractedData,
       completed_at: new Date().toISOString()
     }).eq('id', jobId);
+
+    if (updateError) {
+      console.error(`[Job ${jobId}] ✗ Failed to update job status:`, updateError);
+      throw new Error(`Database update failed: ${updateError.message}`);
+    }
 
     console.log(`[Job ${jobId}] ✓ CV parsing completed successfully.`);
     console.log(`[Job ${jobId}] → Database trigger will now sync data to user_profiles (profile_id: ${profileId})`);
