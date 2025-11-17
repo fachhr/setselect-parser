@@ -165,10 +165,12 @@ BEGIN
       -- YEARS OF EXPERIENCE
       -- ================================================================
       -- Calculated experience level from professional work history
-      years_of_experience = COALESCE(
-        NEW.extracted_data->>'years_of_experience',
-        years_of_experience
-      ),
+      years_of_experience = CASE
+        WHEN NEW.extracted_data->>'years_of_experience' IS NOT NULL AND
+             NEW.extracted_data->>'years_of_experience' ~ '^\d+$'
+        THEN (NEW.extracted_data->>'years_of_experience')::INTEGER
+        ELSE years_of_experience
+      END,
 
       -- ================================================================
       -- PROFILE PICTURE
