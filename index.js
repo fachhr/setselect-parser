@@ -718,9 +718,16 @@ function calculateTotalWorkMonths(experiences) {
 
     try {
       const start = new Date(exp.startDate + '-01');
-      const end = (exp.endDate && exp.endDate.toLowerCase() !== 'present')
-        ? new Date(exp.endDate + '-01')
-        : new Date();
+
+      // Use current date if position is current, otherwise use endDate
+      let end;
+      if (exp.isCurrent === true) {
+        end = new Date(); // Still working here
+      } else if (exp.endDate && exp.endDate.toLowerCase() !== 'present') {
+        end = new Date(exp.endDate + '-01');
+      } else {
+        end = new Date(); // Default to current date
+      }
 
       // Validate date range
       if (start <= end) {
