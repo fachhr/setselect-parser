@@ -13,7 +13,6 @@ import {
   SPECIFIC_FIELD_OPTIONS,
   DEGREE_TYPE_OPTIONS,
   POSITION_TYPE_OPTIONS,
-  YEARS_OF_EXPERIENCE_OPTIONS,
   LANGUAGE_PROFICIENCY_OPTIONS,
   SKILL_PROFICIENCY_OPTIONS,
   INDUSTRY_SKILL_OPTIONS,
@@ -614,13 +613,7 @@ function validateAndCorrectData(extractedData) {
     }
   }
 
-  // Validate years of experience
-  if (corrected.years_of_experience) {
-    corrected.years_of_experience = fuzzyMatchToOptions(
-      corrected.years_of_experience,
-      YEARS_OF_EXPERIENCE_OPTIONS
-    );
-  }
+  // Note: years_of_experience is calculated from work history, not validated from AI extraction
 
   // Validate education history
   if (Array.isArray(corrected.education_history)) {
@@ -775,32 +768,24 @@ function calculateTotalWorkMonths(experiences) {
   return totalMonths;
 }
 
-// Map total months to years of experience range
-function mapMonthsToExperienceRange(months) {
-  if (typeof months !== 'number' || months < 0) return 'no-experience';
-  if (months === 0) return 'no-experience';
-  if (months < 12) return 'less-than-1';
-  const years = Math.floor(months / 12);
-  if (years <= 2) return '1-2';
-  if (years <= 5) return '3-5';
-  if (years <= 10) return '6-10';
-  if (years <= 15) return '11-15';
-  if (years <= 20) return '16-20';
-  return 'more-than-20';
+// Convert months to years (integer)
+function calculateYearsFromMonths(months) {
+  if (typeof months !== 'number' || months < 0) return 0;
+  return Math.floor(months / 12); // Simple: 0, 1, 2, 3, 4, 5...
 }
 
 // Infer years of experience if missing or uncertain
 function inferYearsOfExperience(extractedData) {
-  if (extractedData.years_of_experience) {
-    return extractedData.years_of_experience; // Already has value
-  }
-
+  // ALWAYS calculate from work history for accuracy (don't trust OpenAI extraction)
   if (!extractedData.professional_experience || extractedData.professional_experience.length === 0) {
-    return 'no-experience';
+    console.log('[inferYearsOfExperience] No professional experience found, returning 0');
+    return 0;
   }
 
   const totalMonths = calculateTotalWorkMonths(extractedData.professional_experience);
-  return mapMonthsToExperienceRange(totalMonths);
+  const years = calculateYearsFromMonths(totalMonths);
+  console.log(`[inferYearsOfExperience] Calculated ${totalMonths} months → ${years} years`);
+  return years;
 }
 
 // Extract unique countries from experience/education
@@ -849,11 +834,14 @@ function applyInferenceLogic(extractedData) {
   const inferred = { ...extractedData };
   const inferences = [];
 
-  // Infer years of experience
-  if (!inferred.years_of_experience && ENABLE_INFERENCE) {
+  // Always recalculate years of experience from work history for accuracy
+  if (ENABLE_INFERENCE) {
+    const originalValue = inferred.years_of_experience;
     inferred.years_of_experience = inferYearsOfExperience(inferred);
-    if (inferred.years_of_experience !== 'no-experience') {
-      inferences.push(`Inferred years_of_experience: ${inferred.years_of_experience}`);
+    if (originalValue !== inferred.years_of_experience) {
+      inferences.push(`Calculated years_of_experience: ${inferred.years_of_experience} (was: ${originalValue || 'null'})`);
+    } else {
+      inferences.push(`Verified years_of_experience: ${inferred.years_of_experience}`);
     }
   }
 
@@ -899,7 +887,6 @@ function createComprehensiveParsingPrompt(cvText) {
   const specificFields = getOptionsString(SPECIFIC_FIELD_OPTIONS);
   const degreeTypes = getOptionsString(DEGREE_TYPE_OPTIONS);
   const positionTypes = getOptionsString(POSITION_TYPE_OPTIONS);
-  const experienceLevels = getOptionsString(YEARS_OF_EXPERIENCE_OPTIONS);
   const languageProficiencies = getOptionsString(LANGUAGE_PROFICIENCY_OPTIONS);
   const skillLevels = getOptionsString(SKILL_PROFICIENCY_OPTIONS);
   const industrySkills = getOptionsString(INDUSTRY_SKILL_OPTIONS);
@@ -925,7 +912,7 @@ function createComprehensiveParsingPrompt(cvText) {
     "linkedinUrl": "string (full URL) | null",
     "githubUrl": "string (full URL) | null",
     "portfolioUrl": "string (full URL) | null",
-    "years_of_experience": "string (${experienceLevels}) | null",
+    "years_of_experience": "number (integer, e.g., 0, 1, 2, 3, 5, 10) | null",
     "education_history": [{
       "universityName": "string",
       "degreeType": "string (${degreeTypes}) | null",
@@ -1096,6 +1083,7 @@ async function parseCV(cvText, jobId) {
 
   let extractedData = JSON.parse(firstPassCompletion.choices[0].message.content);
   console.log(`[Job ${jobId}] First pass completed. Fields extracted: ${Object.keys(extractedData).length}`);
+  console.log(`[Job ${jobId}] OpenAI returned years_of_experience: "${extractedData.years_of_experience}" (type: ${typeof extractedData.years_of_experience})`);
 
   // VALIDATION & AUTO-CORRECTION
   console.log(`[Job ${jobId}] Applying validation and auto-correction...`);
