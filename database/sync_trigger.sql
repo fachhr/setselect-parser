@@ -162,6 +162,15 @@ BEGIN
       ),
 
       -- ================================================================
+      -- YEARS OF EXPERIENCE
+      -- ================================================================
+      -- Calculated experience level from professional work history
+      years_of_experience = COALESCE(
+        NEW.extracted_data->>'years_of_experience',
+        years_of_experience
+      ),
+
+      -- ================================================================
       -- PROFILE PICTURE
       -- ================================================================
       -- Storage path for extracted profile picture (if found in CV)

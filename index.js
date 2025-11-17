@@ -30,7 +30,6 @@ const app = express();
 app.use(express.json());
 const PORT = process.env.PORT || 3002;
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
-const CONFIDENCE_THRESHOLD = parseFloat(process.env.CONFIDENCE_THRESHOLD) || 70;
 const ENABLE_TWO_PASS = process.env.ENABLE_TWO_PASS !== 'false'; // Default true
 const ENABLE_INFERENCE = process.env.ENABLE_INFERENCE !== 'false'; // Default true
 const ENABLE_PROFILE_PICTURE_EXTRACTION = process.env.ENABLE_PROFILE_PICTURE_EXTRACTION !== 'false'; // Default true
@@ -42,6 +41,24 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// ==========================================
+// CONSTANTS
+// ==========================================
+
+// Image extraction and processing
+const IMAGE_MIN_SIZE = 100; // Minimum width/height in pixels to consider
+const IMAGE_MAX_DIMENSION = 800; // Maximum dimension for resized images
+const IMAGE_JPEG_QUALITY = 85; // JPEG compression quality (0-100)
+const IMAGE_MAX_CANDIDATES = 5; // Max images to analyze with Vision API
+const PDF_MAX_PAGES_TO_SCAN = 2; // Only scan first N pages for images
+
+// OpenAI API configuration
+const OPENAI_MODEL_PARSING = 'gpt-4o'; // Model for CV text parsing
+const OPENAI_MODEL_VISION = 'gpt-4o-mini'; // Model for image analysis
+const OPENAI_TEMP_PARSING = 0.1; // Temperature for parsing (lower = more deterministic)
+const OPENAI_TEMP_VISION = 0.3; // Temperature for vision analysis
+const OPENAI_MAX_TOKENS_VISION = 200; // Max tokens for vision response
 
 // ==========================================
 // HELPER FUNCTIONS
@@ -66,23 +83,12 @@ const getOptionsStringForSimpleArray = (optionsArray) => {
 
 // Convert file to text
 async function convertFileToText(storagePath) {
-  console.log(`[convertFileToText] Attempting to download from talent-pool-cvs bucket: ${storagePath}`);
-  console.log(`[convertFileToText] Supabase URL: ${process.env.SUPABASE_URL ? 'SET' : 'NOT SET'}`);
-  console.log(`[convertFileToText] Service Role Key: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SET (length: ' + process.env.SUPABASE_SERVICE_ROLE_KEY.length + ')' : 'NOT SET'}`);
-
   const { data, error } = await supabase.storage.from('talent-pool-cvs').download(storagePath);
 
   if (error) {
-    console.error(`[convertFileToText] Supabase download error:`, {
-      message: error.message,
-      statusCode: error.statusCode,
-      error: error.error,
-      storagePath,
-    });
-    throw new Error(`Supabase download error: ${error.message} (Status: ${error.statusCode || 'unknown'})`);
+    console.error(`[ERROR] Failed to download CV from storage: ${error.message}`, { storagePath });
+    throw new Error(`Storage download failed: ${error.message}`);
   }
-
-  console.log(`[convertFileToText] File downloaded successfully, size: ${data.size} bytes`);
 
   const buffer = Buffer.from(await data.arrayBuffer());
   if (storagePath.toLowerCase().endsWith('.pdf')) {
@@ -111,8 +117,8 @@ async function extractImagesFromPdf(buffer) {
     const pages = pdfDoc.getPages();
     const extractedImages = [];
 
-    // Only process first 2 pages (profile pictures are typically on page 1)
-    const pagesToProcess = Math.min(pages.length, 2);
+    // Only process first pages (profile pictures are typically on page 1)
+    const pagesToProcess = Math.min(pages.length, PDF_MAX_PAGES_TO_SCAN);
 
     for (let pageIndex = 0; pageIndex < pagesToProcess; pageIndex++) {
       const page = pages[pageIndex];
@@ -138,8 +144,8 @@ async function extractImagesFromPdf(buffer) {
           const width = xObject?.dict?.get(PDFName.of('Width'))?.value;
           const height = xObject?.dict?.get(PDFName.of('Height'))?.value;
 
-          // Filter out small images (likely icons/logos) - must be at least 100x100px
-          if (!width || !height || width < 100 || height < 100) continue;
+          // Filter out small images (likely icons/logos)
+          if (!width || !height || width < IMAGE_MIN_SIZE || height < IMAGE_MIN_SIZE) continue;
 
           // Get image data
           const imageData = xObject?.contents;
@@ -148,8 +154,8 @@ async function extractImagesFromPdf(buffer) {
           // Convert to Buffer and optimize with sharp
           const imageBuffer = Buffer.from(imageData);
           const optimizedImage = await sharp(imageBuffer)
-            .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 85 })
+            .resize(IMAGE_MAX_DIMENSION, IMAGE_MAX_DIMENSION, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: IMAGE_JPEG_QUALITY })
             .toBuffer();
 
           const metadata = await sharp(optimizedImage).metadata();
@@ -161,15 +167,15 @@ async function extractImagesFromPdf(buffer) {
             page: pageIndex + 1
           });
         } catch (err) {
-          // Skip individual image extraction errors
-          console.warn(`[extractImagesFromPdf] Failed to extract image from page ${pageIndex + 1}:`, err.message);
+          // Skip individual image extraction errors silently
+          continue;
         }
       }
     }
 
     return extractedImages;
   } catch (error) {
-    console.error('[extractImagesFromPdf] Error:', error);
+    console.error('[ERROR] PDF image extraction failed:', error.message);
     return [];
   }
 }
@@ -195,14 +201,14 @@ async function extractImagesFromDocx(buffer) {
           const metadata = await sharp(imageBuffer).metadata();
 
           // Filter out small images (likely icons/logos)
-          if (metadata.width < 100 || metadata.height < 100) {
+          if (metadata.width < IMAGE_MIN_SIZE || metadata.height < IMAGE_MIN_SIZE) {
             return { src: '' }; // Skip small images
           }
 
           // Optimize image
           const optimizedImage = await sharp(imageBuffer)
-            .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 85 })
+            .resize(IMAGE_MAX_DIMENSION, IMAGE_MAX_DIMENSION, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: IMAGE_JPEG_QUALITY })
             .toBuffer();
 
           const optimizedMetadata = await sharp(optimizedImage).metadata();
@@ -215,7 +221,7 @@ async function extractImagesFromDocx(buffer) {
 
           return { src: '' }; // We don't need the HTML, just extracting images
         } catch (err) {
-          console.warn('[extractImagesFromDocx] Failed to process image:', err.message);
+          // Skip individual image errors silently
           return { src: '' };
         }
       })
@@ -223,7 +229,7 @@ async function extractImagesFromDocx(buffer) {
 
     return extractedImages;
   } catch (error) {
-    console.error('[extractImagesFromDocx] Error:', error);
+    console.error('[ERROR] DOCX image extraction failed:', error.message);
     return [];
   }
 }
@@ -239,8 +245,8 @@ async function identifyProfilePicture(images) {
   }
 
   try {
-    // Convert first 5 candidate images to base64 (to limit API cost)
-    const candidateImages = images.slice(0, 5);
+    // Convert first candidate images to base64 (to limit API cost)
+    const candidateImages = images.slice(0, IMAGE_MAX_CANDIDATES);
     const base64Images = candidateImages.map((img) => ({
       base64: img.buffer.toString('base64'),
       dimensions: `${img.width}x${img.height}`
@@ -282,7 +288,7 @@ If none of the images appear to be a professional profile picture (e.g., they're
 
     try {
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini', // Using gpt-4o-mini for cost efficiency with vision
+        model: OPENAI_MODEL_VISION,
         messages: [
           {
             role: 'user',
@@ -292,8 +298,8 @@ If none of the images appear to be a professional profile picture (e.g., they're
             ]
           }
         ],
-        max_tokens: 200,
-        temperature: 0.3,
+        max_tokens: OPENAI_MAX_TOKENS_VISION,
+        temperature: OPENAI_TEMP_VISION,
       }, {
         signal: controller.signal
       });
@@ -309,7 +315,6 @@ If none of the images appear to be a professional profile picture (e.g., they're
       // Extract JSON from response (handle markdown code blocks)
       let jsonMatch = content.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.warn('[identifyProfilePicture] Could not parse JSON from response:', content);
         return { imageIndex: null, confidence: 0, reason: 'Failed to parse Vision API response' };
       }
 
@@ -322,7 +327,6 @@ If none of the images appear to be a professional profile picture (e.g., they're
 
       // Validate index is within bounds
       if (imageIndex !== null && (imageIndex < 0 || imageIndex >= images.length)) {
-        console.warn('[identifyProfilePicture] Invalid imageIndex:', result.imageIndex);
         return { imageIndex: null, confidence: 0, reason: 'Invalid image index from API' };
       }
 
@@ -335,14 +339,13 @@ If none of the images appear to be a professional profile picture (e.g., they're
     } catch (apiError) {
       clearTimeout(timeoutId);
       if (apiError.name === 'AbortError') {
-        console.error('[identifyProfilePicture] Vision API timeout');
         return { imageIndex: null, confidence: 0, reason: 'Vision API timeout' };
       }
       throw apiError;
     }
 
   } catch (error) {
-    console.error('[identifyProfilePicture] Error:', error);
+    console.error('[ERROR] Vision API error:', error.message);
     return { imageIndex: null, confidence: 0, reason: `Error: ${error.message}` };
   }
 }
@@ -374,15 +377,14 @@ async function uploadProfilePictureToStorage(imageBuffer, userId, isQuickCV = fa
       });
 
     if (error) {
-      console.error('[uploadProfilePictureToStorage] Upload error:', error);
+      console.error('[ERROR] Profile picture upload failed:', error.message);
       return null;
     }
 
-    console.log(`[uploadProfilePictureToStorage] Successfully uploaded to: ${storagePath}`);
     return storagePath;
 
   } catch (error) {
-    console.error('[uploadProfilePictureToStorage] Error:', error);
+    console.error('[ERROR] Profile picture upload error:', error.message);
     return null;
   }
 }
@@ -396,12 +398,10 @@ async function uploadProfilePictureToStorage(imageBuffer, userId, isQuickCV = fa
  */
 async function extractProfilePicture(storagePath, userId, isQuickCV = false) {
   if (!ENABLE_PROFILE_PICTURE_EXTRACTION) {
-    console.log('[extractProfilePicture] Feature disabled via ENABLE_PROFILE_PICTURE_EXTRACTION');
     return null;
   }
 
   const startTime = Date.now();
-  console.log(`[extractProfilePicture] Starting extraction for: ${storagePath}`);
 
   try {
     // Download file from storage
@@ -424,29 +424,18 @@ async function extractProfilePicture(storagePath, userId, isQuickCV = false) {
     } else if (isDocx) {
       extractedImages = await extractImagesFromDocx(buffer);
     } else {
-      console.warn('[extractProfilePicture] Unsupported file type');
       return null;
     }
 
-    console.log(`[extractProfilePicture] Found ${extractedImages.length} candidate images`);
-
     if (extractedImages.length === 0) {
-      console.log('[extractProfilePicture] No images found in CV');
       return null;
     }
 
     // Use AI to identify the best profile picture
     const identification = await identifyProfilePicture(extractedImages);
 
-    console.log(`[extractProfilePicture] Vision API result:`, {
-      imageIndex: identification.imageIndex,
-      confidence: identification.confidence,
-      reason: identification.reason
-    });
-
     // Check if confidence meets threshold
     if (identification.imageIndex === null || identification.confidence < MIN_CONFIDENCE_THRESHOLD) {
-      console.log(`[extractProfilePicture] No suitable profile picture found (confidence: ${identification.confidence}%)`);
       return null;
     }
 
@@ -456,14 +445,10 @@ async function extractProfilePicture(storagePath, userId, isQuickCV = false) {
     // Upload to storage
     const uploadedPath = await uploadProfilePictureToStorage(selectedImage.buffer, userId, isQuickCV);
 
-    const elapsedTime = Date.now() - startTime;
-    console.log(`[extractProfilePicture] Completed in ${elapsedTime}ms, uploaded to: ${uploadedPath}`);
-
     return uploadedPath;
 
   } catch (error) {
-    const elapsedTime = Date.now() - startTime;
-    console.error(`[extractProfilePicture] Error after ${elapsedTime}ms:`, error);
+    console.error('[ERROR] Profile picture extraction failed:', error.message);
     return null; // Graceful degradation - don't fail the entire parsing job
   }
 }
@@ -498,7 +483,8 @@ function validateAndCorrectCountryCode(code) {
 function validateAndCorrectDate(dateString) {
   if (!dateString || typeof dateString !== 'string') return null;
   const trimmed = dateString.trim().toLowerCase();
-  if (!trimmed || trimmed === 'present') return trimmed;
+  if (!trimmed) return null;
+  if (trimmed === 'present') return 'present'; // Normalize to lowercase
 
   // Handle various date formats
   // Format: MM/YYYY or MM-YYYY -> YYYY-MM
@@ -721,31 +707,69 @@ function validateAndCorrectData(extractedData) {
 // ==========================================
 
 // Calculate total work experience in months from experience array
+// Handles overlapping employment periods correctly (e.g., freelance + full-time)
 function calculateTotalWorkMonths(experiences) {
   if (!Array.isArray(experiences) || experiences.length === 0) return 0;
 
-  let totalMonths = 0;
+  // Step 1: Parse all valid date ranges
+  const ranges = [];
 
   for (const exp of experiences) {
-    const start = exp.startDate;
-    const end = exp.endDate || 'present';
-
-    if (!start) continue;
-
-    try {
-      const startDate = new Date(start + '-01');
-      const endDate = end.toLowerCase() === 'present'
-        ? new Date()
-        : new Date(end + '-01');
-
-      const months = (endDate.getFullYear() - startDate.getFullYear()) * 12
-                    + (endDate.getMonth() - startDate.getMonth());
-
-      totalMonths += Math.max(0, months);
-    } catch (e) {
-      // Skip if dates are invalid
+    if (!exp.startDate) {
+      // Log skipped entries for debugging
+      if (exp.positionName) {
+        console.log(`[calculateTotalWorkMonths] Skipping entry: missing startDate for "${exp.positionName}"`);
+      }
       continue;
     }
+
+    try {
+      const start = new Date(exp.startDate + '-01');
+      const end = (exp.endDate && exp.endDate.toLowerCase() !== 'present')
+        ? new Date(exp.endDate + '-01')
+        : new Date();
+
+      // Validate date range
+      if (start <= end) {
+        ranges.push({ start, end });
+      } else {
+        console.log(`[calculateTotalWorkMonths] Skipping entry: invalid date range (start > end) for "${exp.positionName || 'unknown'}"`);
+      }
+    } catch (e) {
+      // Skip if dates are invalid
+      console.log(`[calculateTotalWorkMonths] Skipping entry: date parse error for "${exp.positionName || 'unknown'}"`);
+      continue;
+    }
+  }
+
+  if (ranges.length === 0) return 0;
+
+  // Step 2: Sort ranges by start date
+  ranges.sort((a, b) => a.start - b.start);
+
+  // Step 3: Merge overlapping ranges
+  const merged = [ranges[0]];
+
+  for (let i = 1; i < ranges.length; i++) {
+    const current = ranges[i];
+    const last = merged[merged.length - 1];
+
+    if (current.start <= last.end) {
+      // Overlapping period - extend the end date if needed
+      last.end = new Date(Math.max(last.end.getTime(), current.end.getTime()));
+    } else {
+      // Non-overlapping period - add as new range
+      merged.push(current);
+    }
+  }
+
+  // Step 4: Calculate total months from merged ranges
+  let totalMonths = 0;
+
+  for (const range of merged) {
+    const months = (range.end.getFullYear() - range.start.getFullYear()) * 12
+                  + (range.end.getMonth() - range.start.getMonth());
+    totalMonths += Math.max(0, months);
   }
 
   return totalMonths;
@@ -753,6 +777,7 @@ function calculateTotalWorkMonths(experiences) {
 
 // Map total months to years of experience range
 function mapMonthsToExperienceRange(months) {
+  if (typeof months !== 'number' || months < 0) return 'no-experience';
   if (months === 0) return 'no-experience';
   if (months < 12) return 'less-than-1';
   const years = Math.floor(months / 12);
@@ -780,9 +805,9 @@ function inferYearsOfExperience(extractedData) {
 
 // Extract unique countries from experience/education
 function extractUniqueCountries(items) {
-  if (!Array.isArray(items)) return [];
+  if (!Array.isArray(items) || items.length === 0) return [];
   const countries = items
-    .map(item => item.country)
+    .map(item => item?.country)
     .filter(Boolean)
     .filter((country, index, self) => self.indexOf(country) === index);
   return countries;
@@ -864,6 +889,10 @@ function applyInferenceLogic(extractedData) {
 
 // Create comprehensive first-pass parsing prompt
 function createComprehensiveParsingPrompt(cvText) {
+  if (!cvText || typeof cvText !== 'string') {
+    throw new Error('Invalid CV text provided for parsing');
+  }
+
   // Dynamically generate all possible option strings
   const countries = getOptionsString(COUNTRY_OPTIONS);
   const generalFields = getOptionsString(GENERAL_FIELD_OPTIONS);
@@ -1008,6 +1037,10 @@ Extract the data now and return ONLY the JSON object.
 
 // Create focused second-pass prompt for ambiguous fields
 function createFocusedPrompt(fieldName, cvText, options) {
+  if (!fieldName || !cvText || !Array.isArray(options)) {
+    return null;
+  }
+
   const prompts = {
     years_of_experience: `
 Analyze this CV and determine the total years of professional work experience (exclude education, internships unless specified as full-time).
@@ -1043,15 +1076,22 @@ ${cvText}
 // ==========================================
 
 async function parseCV(cvText, jobId) {
+  if (!cvText || typeof cvText !== 'string') {
+    throw new Error('Invalid CV text provided');
+  }
+  if (!jobId) {
+    throw new Error('Job ID is required');
+  }
+
   console.log(`[Job ${jobId}] Starting first-pass comprehensive extraction...`);
 
   // FIRST PASS: Comprehensive extraction
   const firstPassPrompt = createComprehensiveParsingPrompt(cvText);
   const firstPassCompletion = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: OPENAI_MODEL_PARSING,
     response_format: { type: "json_object" },
     messages: [{ role: "user", content: firstPassPrompt }],
-    temperature: 0.1,
+    temperature: OPENAI_TEMP_PARSING,
   });
 
   let extractedData = JSON.parse(firstPassCompletion.choices[0].message.content);
@@ -1076,16 +1116,12 @@ async function parseCV(cvText, jobId) {
   }
 
   // TWO-STAGE PARSING for critical ambiguous fields (if enabled)
+  // Note: years_of_experience is handled by inference logic, not two-pass parsing
   if (ENABLE_TWO_PASS) {
     const uncertainFields = [];
 
-    // Check if critical fields are missing or potentially uncertain
-    if (!extractedData.years_of_experience) {
-      uncertainFields.push({
-        field: 'years_of_experience',
-        options: YEARS_OF_EXPERIENCE_OPTIONS.map(opt => opt.value)
-      });
-    }
+    // Reserved for future critical fields that need focused extraction
+    // (years_of_experience is calculated from work history, not extracted)
 
     if (uncertainFields.length > 0) {
       console.log(`[Job ${jobId}] Second-pass parsing for uncertain fields: ${uncertainFields.map(f => f.field).join(', ')}`);
@@ -1095,10 +1131,10 @@ async function parseCV(cvText, jobId) {
         if (focusedPrompt) {
           try {
             const refinedCompletion = await openai.chat.completions.create({
-              model: "gpt-4o",
+              model: OPENAI_MODEL_PARSING,
               response_format: { type: "json_object" },
               messages: [{ role: "user", content: focusedPrompt }],
-              temperature: 0.1,
+              temperature: OPENAI_TEMP_PARSING,
             });
 
             const refinedData = JSON.parse(refinedCompletion.choices[0].message.content);
@@ -1166,8 +1202,6 @@ app.post('/api/v1/parse', (req, res, next) => {
       throw new Error(`Failed to fetch job record: ${jobFetchError?.message || 'Job not found'}`);
     }
 
-    const profileId = jobRecord.profile_id;
-
     // For Silvia's List: Extract userId from storagePath for profile picture
     // Path format: {profileId}/cv.{ext}
     const match = storagePath.match(/^([^\/]+)\//);
@@ -1179,22 +1213,14 @@ app.post('/api/v1/parse', (req, res, next) => {
       convertFileToText(storagePath),
       (async () => {
         try {
-          console.log(`[Job ${jobId}] Extracting profile picture (userId: ${userId})`);
           return await extractProfilePicture(storagePath, userId, isQuickCV);
         } catch (pictureError) {
           // Graceful degradation - don't fail parsing if picture extraction fails
-          console.error(`[Job ${jobId}] Profile picture extraction failed:`, pictureError);
+          console.error(`[Job ${jobId}] Profile picture extraction failed:`, pictureError.message);
           return null;
         }
       })()
     ]);
-
-    console.log(`[Job ${jobId}] CV text extracted: ${cvText.length} characters`);
-    if (profilePicturePath) {
-      console.log(`[Job ${jobId}] Profile picture extracted: ${profilePicturePath}`);
-    } else {
-      console.log(`[Job ${jobId}] No profile picture extracted`);
-    }
 
     const extractedData = await parseCV(cvText, jobId);
 
@@ -1211,16 +1237,14 @@ app.post('/api/v1/parse', (req, res, next) => {
     }).eq('id', jobId);
 
     if (updateError) {
-      console.error(`[Job ${jobId}] ✗ Failed to update job status:`, updateError);
+      console.error(`[Job ${jobId}] Failed to update job status:`, updateError.message);
       throw new Error(`Database update failed: ${updateError.message}`);
     }
 
-    console.log(`[Job ${jobId}] ✓ CV parsing completed successfully.`);
-    console.log(`[Job ${jobId}] → Database trigger will now sync data to user_profiles (profile_id: ${profileId})`);
-    console.log(`[Job ${jobId}] → Fields to sync: education, experience, skills, languages, certifications, projects, contact details, profile picture`);
+    console.log(`[Job ${jobId}] CV parsing completed successfully`);
 
   } catch (error) {
-    console.error(`[Job ${jobId}] ✗ CV parsing failed:`, error);
+    console.error(`[Job ${jobId}] CV parsing failed:`, error.message);
     await supabase.from('cv_parsing_jobs').update({
       status: 'failed',
       error_message: error.message,
@@ -1236,7 +1260,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Listening on port ${PORT}`);
   console.log(`Two-pass parsing: ${ENABLE_TWO_PASS ? 'ENABLED' : 'DISABLED'}`);
   console.log(`Field inference: ${ENABLE_INFERENCE ? 'ENABLED' : 'DISABLED'}`);
-  console.log(`Confidence threshold: ${CONFIDENCE_THRESHOLD}%`);
   console.log(`Profile picture extraction: ${ENABLE_PROFILE_PICTURE_EXTRACTION ? 'ENABLED' : 'DISABLED'}`);
   if (ENABLE_PROFILE_PICTURE_EXTRACTION) {
     console.log(`  - Vision API timeout: ${VISION_API_TIMEOUT_MS}ms`);
