@@ -1306,6 +1306,39 @@ app.post('/api/v1/parse', (req, res, next) => {
       throw new Error(`Database update failed: ${updateError.message}`);
     }
 
+    // Update user_profiles with parsed data
+    const profileUpdateData = {};
+
+    if (extractedData.profile_bio) {
+      profileUpdateData.profile_bio = extractedData.profile_bio;
+    }
+    if (extractedData.functional_expertise) {
+      profileUpdateData.functional_expertise = extractedData.functional_expertise;
+    }
+    if (extractedData.education_history) {
+      profileUpdateData.education_history = extractedData.education_history;
+    }
+    if (extractedData.professional_experience) {
+      profileUpdateData.professional_experience = extractedData.professional_experience;
+    }
+    if (extractedData.technical_skills) {
+      profileUpdateData.technical_skills = extractedData.technical_skills;
+    }
+
+    if (Object.keys(profileUpdateData).length > 0) {
+      const { error: profileUpdateError } = await supabase
+        .from('user_profiles')
+        .update(profileUpdateData)
+        .eq('id', jobRecord.profile_id);
+
+      if (profileUpdateError) {
+        console.error(`[Job ${jobId}] Failed to update user profile:`, profileUpdateError.message);
+        // Non-fatal - parsing still succeeded, just profile update failed
+      } else {
+        console.log(`[Job ${jobId}] User profile updated with ${Object.keys(profileUpdateData).length} parsed fields`);
+      }
+    }
+
     console.log(`[Job ${jobId}] CV parsing completed successfully`);
 
   } catch (error) {
