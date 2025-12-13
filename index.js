@@ -1089,7 +1089,7 @@ async function generateProfileBio(extractedData) {
     - Swiss Context: Be precise about work permits and locations.
 
     Structure:
-    1. Opening: Seniority + Role + Years of Experience.
+    1. Opening: Seniority + Role.
     2. The "Hook": Integrate any highlight/achievement seamlessly.
     3. Skills: Mention top 3 functional expertise or technical skills.
     4. Closing: Availability and key strengths.
