@@ -43,7 +43,6 @@ RETURNS TRIGGER AS $$
 DECLARE
   v_profile_id UUID;
   v_rows_updated INTEGER;
-  v_written_years INTEGER;
 BEGIN
   -- Log trigger activation
   RAISE NOTICE 'Trigger activated: sync_parsed_cv_data_to_profile for job ID %', NEW.id;
@@ -60,12 +59,8 @@ BEGIN
     -- Log data sync start
     RAISE NOTICE 'Syncing parsed data for profile % from job %', NEW.profile_id, NEW.id;
 
-    -- DEBUG: Log years_of_experience value and type
+    -- DEBUG: Log extracted_data type
     RAISE NOTICE '[DEBUG] extracted_data type: %', pg_typeof(NEW.extracted_data);
-    RAISE NOTICE '[DEBUG] years_of_experience raw: %', NEW.extracted_data->'years_of_experience';
-    RAISE NOTICE '[DEBUG] years_of_experience as text: %', NEW.extracted_data->>'years_of_experience';
-    RAISE NOTICE '[DEBUG] IS NOT NULL check: %', (NEW.extracted_data->>'years_of_experience' IS NOT NULL);
-    RAISE NOTICE '[DEBUG] regex match: %', (NEW.extracted_data->>'years_of_experience' ~ '^\d+$');
 
     -- Perform atomic update to user_profiles
     UPDATE user_profiles
@@ -170,15 +165,12 @@ BEGIN
       ),
 
       -- ================================================================
-      -- YEARS OF EXPERIENCE
+      -- YEARS OF EXPERIENCE - REMOVED (User provides this in form)
       -- ================================================================
-      -- Calculated experience level from professional work history
-      years_of_experience = CASE
-        WHEN NEW.extracted_data->>'years_of_experience' IS NOT NULL AND
-             NEW.extracted_data->>'years_of_experience' ~ '^\d+$'
-        THEN (NEW.extracted_data->>'years_of_experience')::INTEGER
-        ELSE years_of_experience
-      END,
+      -- NOTE: years_of_experience is an obligatory form field filled by the user.
+      -- We do NOT overwrite it with parser-calculated values.
+      -- The parser still calculates it for the cv_parsing_jobs.extracted_data record,
+      -- but it is intentionally NOT synced to user_profiles.
 
       -- ================================================================
       -- PROFILE PICTURE
@@ -208,13 +200,6 @@ BEGIN
 
     -- Get number of rows updated
     GET DIAGNOSTICS v_rows_updated = ROW_COUNT;
-
-    -- DEBUG: Check what was actually written
-    SELECT years_of_experience INTO v_written_years
-    FROM user_profiles
-    WHERE id = NEW.profile_id;
-
-    RAISE NOTICE '[DEBUG] years_of_experience written to DB: %', v_written_years;
 
     -- Log result
     IF v_rows_updated = 1 THEN
