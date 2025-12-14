@@ -1144,20 +1144,31 @@ Rules:
 - No names, no company names, no pronouns
 - No years of experience (already shown elsewhere)
 - No languages (already shown elsewhere)
+- No technical skills or tools (already shown in skills section)
 - Punchy, impressive, third-person
 - Output plain text only (no quotes, no dashes, no bullet points)
 
 Examples:
 
-Seasoned power trader focused on European gas and electricity. Proven P&L track record. Expert in hedging and portfolio optimization.
+Senior software engineer building scalable distributed systems. Track record shipping products to millions of users. Strong technical leadership.
 
-Quant developer building trading systems for commodity desks. Strong C++ and Python. Experienced with real-time pricing engines.
+Management consultant advising Fortune 500 on digital transformation. Proven results in cost optimization. Skilled at executive stakeholder management.
 
-Supply chain expert in LNG and crude logistics. Track record optimizing costs. Deep knowledge of shipping and terminals.
+Operations director streamlining manufacturing processes across multiple sites. Reduced costs by driving efficiency initiatives. Strong team leadership.
 
-Risk manager specializing in commodity derivatives. Deep regulatory expertise. Skilled in VaR modeling and stress testing.
+Investment analyst evaluating opportunities in emerging markets. Published research cited by industry leaders. Deep financial modeling expertise.
 
-Senior analyst covering base metals and agricultural commodities. Strong modeling skills. Published research on market fundamentals.
+Product manager launching customer-facing features for fintech platforms. Data-driven decision maker with strong user empathy. Cross-functional collaborator.
+
+Sales executive expanding enterprise accounts in competitive markets. Consistent quota overachievement track record. Skilled relationship builder.
+
+HR business partner driving talent strategy for high-growth organizations. Experience scaling teams through hypergrowth. Strong employer branding background.
+
+Strategy lead developing market entry plans for new geographies. Background in competitive intelligence and pricing. Strong analytical and communication skills.
+
+Supply chain specialist optimizing global logistics and procurement. Track record reducing lead times and costs. Deep vendor management expertise.
+
+Risk professional implementing governance frameworks for regulated industries. Strong compliance and audit background. Experienced in regulatory engagement.
   `;
 
   const userPrompt = `
