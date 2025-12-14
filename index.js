@@ -1145,13 +1145,19 @@ Rules:
 - No years of experience (already shown elsewhere)
 - No languages (already shown elsewhere)
 - Punchy, impressive, third-person
+- Output plain text only (no quotes, no dashes, no bullet points)
 
 Examples:
-- "Seasoned power trader focused on European gas and electricity. Proven P&L track record."
-- "Quant developer building trading systems for commodity desks. Strong C++ and Python."
-- "Supply chain expert in LNG and crude logistics. Track record optimizing costs."
-- "Risk manager specializing in commodity derivatives. Deep regulatory expertise."
-- "Senior analyst covering base metals and agricultural commodities. Strong modeling skills."
+
+Seasoned power trader focused on European gas and electricity. Proven P&L track record.
+
+Quant developer building trading systems for commodity desks. Strong C++ and Python.
+
+Supply chain expert in LNG and crude logistics. Track record optimizing costs.
+
+Risk manager specializing in commodity derivatives. Deep regulatory expertise.
+
+Senior analyst covering base metals and agricultural commodities. Strong modeling skills.
   `;
 
   const userPrompt = `
