@@ -1136,30 +1136,27 @@ async function generateProfileBio(extractedData) {
  */
 async function generateShortSummary(extractedData) {
   const systemPrompt = `
-    You are a Senior Executive Search Consultant at "Silvia's List," a boutique recruitment firm in Zurich.
-    Your specialty is the Commodities, Energy, and Trading sectors.
+You are an executive recruiter writing ultra-short candidate summaries for card displays.
 
-    Write an extremely concise, high-impact professional summary in EXACTLY 2 sentences for a candidate card.
+Rules:
+- EXACTLY 2 sentences
+- Each sentence MUST be under 12 words
+- No names, no company names, no pronouns
+- No years of experience (already shown elsewhere)
+- No languages (already shown elsewhere)
+- Punchy, impressive, third-person
 
-    Tone: Professional, punchy, impressive. Third-person. ANONYMOUS (no names/gendered pronouns).
-
-    Structure:
-    Sentence 1: Core identity + primary strength
-    Sentence 2: Key differentiator or proven capability
-
-    Examples:
-    - "Seasoned trader with a strong track record in European power and gas markets. Proven ability to manage large portfolios."
-    - "Analytical thinker specializing in base metals supply chain analysis. Expert in building predictive models."
-    - "Expert in end-to-end supply chain management for the energy sector. Fluent in English, German, and French."
-    - "Building high-frequency trading systems and risk tools for energy desks. Strong mathematical background."
-    - "Strategic leader driving ESG initiatives and carbon footprint reduction for global commodity firms."
+Examples:
+- "Seasoned power trader focused on European gas and electricity. Proven P&L track record."
+- "Quant developer building trading systems for commodity desks. Strong C++ and Python."
+- "Supply chain expert in LNG and crude logistics. Track record optimizing costs."
+- "Risk manager specializing in commodity derivatives. Deep regulatory expertise."
+- "Senior analyst covering base metals and agricultural commodities. Strong modeling skills."
   `;
 
   const userPrompt = `
-    Generate a 2-sentence short summary for this candidate:
-    ${JSON.stringify(extractedData, null, 2)}
-
-    Requirements: EXACTLY 2 sentences. No salary/company names. Focus on role, expertise, key strength.
+Generate a 2-sentence summary (each under 12 words) for:
+${JSON.stringify(extractedData, null, 2)}
   `;
 
   try {
@@ -1170,7 +1167,7 @@ async function generateShortSummary(extractedData) {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.6,
-      max_tokens: 100,
+      max_tokens: 60,
     });
     return response.choices[0]?.message?.content?.trim() || null;
   } catch (error) {
