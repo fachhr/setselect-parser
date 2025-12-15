@@ -20,6 +20,7 @@ import {
   JOB_TYPE_OPTIONS,
   LOCATION_OPTIONS,
   INDUSTRY_PREFERENCE_OPTIONS,
+  FUNCTIONAL_EXPERTISE_OPTIONS,
 } from './formOptions.js';
 
 // ==========================================
@@ -879,6 +880,53 @@ function applyInferenceLogic(extractedData) {
 }
 
 // ==========================================
+// FUNCTIONAL EXPERTISE MERGE LOGIC
+// ==========================================
+
+/**
+ * Validates and filters functional expertise to only valid categories
+ * @param {Array} expertise - Array of expertise strings from parser or user
+ * @returns {Array} - Filtered array of valid expertise categories
+ */
+function validateFunctionalExpertise(expertise) {
+  if (!Array.isArray(expertise)) return [];
+
+  return expertise.filter(item =>
+    typeof item === 'string' &&
+    FUNCTIONAL_EXPERTISE_OPTIONS.includes(item)
+  );
+}
+
+/**
+ * Merges user-selected expertise with parser-extracted expertise
+ * User selections are the source of truth; parser supplements up to max of 8 total
+ *
+ * @param {Array} userExpertise - User-selected expertise from form (source of truth)
+ * @param {Array} parserExpertise - Parser-extracted expertise from CV
+ * @returns {Array} - Merged expertise array (max 8 items)
+ */
+function mergeFunctionalExpertise(userExpertise, parserExpertise) {
+  const MAX_EXPERTISE = 8;
+
+  // Validate both inputs
+  const validUserExpertise = validateFunctionalExpertise(userExpertise);
+  const validParserExpertise = validateFunctionalExpertise(parserExpertise);
+
+  // Start with user selections (source of truth)
+  const merged = [...validUserExpertise];
+
+  // Add parser expertise that isn't already in user selections (up to max)
+  for (const expertise of validParserExpertise) {
+    if (merged.length >= MAX_EXPERTISE) break;
+    if (!merged.includes(expertise)) {
+      merged.push(expertise);
+    }
+  }
+
+  return merged;
+}
+
+// ==========================================
 // OPENAI PARSING PROMPTS
 // ==========================================
 
@@ -975,7 +1023,8 @@ function createComprehensiveParsingPrompt(cvText) {
     "desired_duration_months": "string (${durations}) | null",
     "desired_job_types": ["string e.g., (${jobTypes})"],
     "desired_locations": ["string e.g., (${locations})"],
-    "desired_industries": ["string e.g., (${industries})"]
+    "desired_industries": ["string e.g., (${industries})"],
+    "functional_expertise": ["string - extract from CV, see rule 15"]
   }
   `;
 
@@ -1016,6 +1065,26 @@ CRITICAL EXTRACTION RULES:
 13. **JOB PREFERENCES** - If the CV mentions career goals, desired roles, preferred locations, or availability, extract this into the desired_* fields.
 
 14. **BOOLEAN FIELDS** - Set isCurrent to true for ongoing education or current positions.
+
+15. **FUNCTIONAL EXPERTISE EXTRACTION** - Use a two-step approach for functional expertise (for commodities/energy/finance talent):
+
+    **Step 1 - Check for explicit mentions:** First, look for explicitly stated expertise in sections like:
+    - "Core Competencies:", "Expertise:", "Areas of Expertise:", "Key Skills:", "Functional Skills:"
+    - Skills summaries or executive summaries that explicitly list expertise areas
+
+    **Step 2 - Intelligent inference (if not explicit):** If expertise is NOT specifically stated, intelligently determine it from context:
+    - Analyze job titles (e.g., "Risk Analyst" → Risk Management, "Trading Desk Lead" → Trading + Leadership)
+    - Analyze responsibilities and achievements
+    - Consider education background for technical expertise
+    - Example: "Managed VaR models and credit exposure analysis" → Risk Management
+    - Example: "Built real-time pricing engine in Python" → Technology + Engineering
+    - Example: "Led team of 15 traders" → Leadership + Trading
+    - Example: "Structured commodity derivatives" → Trading + Quantitative Analysis
+
+    **Valid categories (select ONLY from this list):**
+    Trading, Risk Management, Quantitative Analysis, Technology, Operations, Finance, Leadership, Legal, Compliance, Research, Analytics, Engineering
+
+    Return 1-8 categories maximum. Prioritize most relevant based on career focus and seniority.
 
 EXPECTED JSON OUTPUT STRUCTURE:
 ${jsonStructure}
@@ -1312,8 +1381,12 @@ async function parseCV(cvText, jobId) {
   const experienceCount = extractedData.professional_experience?.length || 0;
   const skillsCount = (extractedData.technical_skills?.length || 0) + (extractedData.soft_skills?.length || 0);
   const certsCount = extractedData.certifications?.length || 0;
+  const expertiseCount = extractedData.functional_expertise?.length || 0;
 
-  console.log(`[Job ${jobId}] Extraction complete: ${educationCount} education, ${experienceCount} experience, ${skillsCount} skills, ${certsCount} certifications`);
+  console.log(`[Job ${jobId}] Extraction complete: ${educationCount} education, ${experienceCount} experience, ${skillsCount} skills, ${certsCount} certifications, ${expertiseCount} expertise areas`);
+  if (expertiseCount > 0) {
+    console.log(`[Job ${jobId}] Functional expertise: ${JSON.stringify(extractedData.functional_expertise)}`);
+  }
 
   return extractedData;
 }
@@ -1324,7 +1397,7 @@ async function parseCV(cvText, jobId) {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'cv-parser-service', version: '2.1.0' });
+  res.json({ status: 'ok', service: 'cv-parser-service', version: '2.2.0' });
 });
 
 // Main parsing endpoint
@@ -1427,9 +1500,41 @@ app.post('/api/v1/parse', (req, res, next) => {
     if (extractedData.short_summary) {
       profileUpdateData.short_summary = extractedData.short_summary;
     }
-    if (extractedData.functional_expertise) {
-      profileUpdateData.functional_expertise = extractedData.functional_expertise;
+
+    // For functional_expertise: merge user selections with parser-extracted expertise
+    // User selections are the source of truth
+    if (extractedData.functional_expertise && extractedData.functional_expertise.length > 0) {
+      // Fetch user's existing expertise selections from profile
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('user_profiles')
+        .select('functional_expertise')
+        .eq('id', jobRecord.profile_id)
+        .single();
+
+      if (!fetchError && existingProfile) {
+        const userExpertise = existingProfile.functional_expertise || [];
+        const parserExpertise = extractedData.functional_expertise;
+
+        // Merge: user selections first (source of truth), parser supplements
+        const mergedExpertise = mergeFunctionalExpertise(userExpertise, parserExpertise);
+
+        console.log(`[Job ${jobId}] Functional expertise merge:`);
+        console.log(`  - User selected: ${JSON.stringify(userExpertise)}`);
+        console.log(`  - Parser found: ${JSON.stringify(parserExpertise)}`);
+        console.log(`  - Merged result: ${JSON.stringify(mergedExpertise)}`);
+
+        if (mergedExpertise.length > 0) {
+          profileUpdateData.functional_expertise = mergedExpertise;
+        }
+      } else {
+        // No existing profile or error - just use parser expertise
+        const validParserExpertise = validateFunctionalExpertise(extractedData.functional_expertise);
+        if (validParserExpertise.length > 0) {
+          profileUpdateData.functional_expertise = validParserExpertise;
+        }
+      }
     }
+
     if (extractedData.education_history) {
       profileUpdateData.education_history = extractedData.education_history;
     }
@@ -1469,7 +1574,7 @@ app.post('/api/v1/parse', (req, res, next) => {
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`======================================`);
-  console.log(`CV Parser Service v2.1.0`);
+  console.log(`CV Parser Service v2.2.0`);
   console.log(`Listening on port ${PORT}`);
   console.log(`Two-pass parsing: ${ENABLE_TWO_PASS ? 'ENABLED' : 'DISABLED'}`);
   console.log(`Field inference: ${ENABLE_INFERENCE ? 'ENABLED' : 'DISABLED'}`);
@@ -1478,5 +1583,8 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`  - Vision API timeout: ${VISION_API_TIMEOUT_MS}ms`);
     console.log(`  - Min confidence: ${MIN_CONFIDENCE_THRESHOLD}%`);
   }
+  console.log(`Functional expertise extraction: ENABLED`);
+  console.log(`  - Categories: ${FUNCTIONAL_EXPERTISE_OPTIONS.length}`);
+  console.log(`  - Max merged: 8`);
   console.log(`======================================`);
 });

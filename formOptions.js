@@ -490,3 +490,21 @@ export const INDUSTRY_PREFERENCE_OPTIONS = [
     { value: "CustomerService",  label: "Customer Service" },
     { value: "BrandPartner",     label: "Brand Partnerships & Licensing" }
 ];
+
+// --- Functional Expertise (Commodities/Energy/Finance Focus) ---
+// These categories are specific to Silvia's List talent pool
+export const FUNCTIONAL_EXPERTISE_OPTIONS = [
+  'Trading',
+  'Risk Management',
+  'Quantitative Analysis',
+  'Technology',
+  'Operations',
+  'Finance',
+  'Leadership',
+  'Legal',
+  'Compliance',
+  'Research',
+  'Analytics',
+  'Engineering'
+  // Note: 'Other' is handled by user input, not by parser extraction
+];
