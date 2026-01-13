@@ -492,7 +492,7 @@ export const INDUSTRY_PREFERENCE_OPTIONS = [
 ];
 
 // --- Functional Expertise (Commodities/Energy/Finance Focus) ---
-// These categories are specific to Silvia's List talent pool
+// These categories are specific to SetSelect talent pool
 export const FUNCTIONAL_EXPERTISE_OPTIONS = [
   'Trading',
   'Risk Management',

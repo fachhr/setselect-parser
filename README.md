@@ -1,6 +1,6 @@
-# Silvia's List - CV Parser Service
+# SetSelect - CV Parser Service
 
-AI-powered CV parsing service for extracting structured data from resumes. This service is deployed on Railway and handles asynchronous CV processing for the Silvia's List talent pool platform.
+AI-powered CV parsing service for extracting structured data from resumes. This service is deployed on Railway and handles asynchronous CV processing for the SetSelect talent pool platform.
 
 ## Features
 
@@ -81,8 +81,8 @@ AI-powered CV parsing service for extracting structured data from resumes. This 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-username/silvias-list-parser.git
-cd silvias-list-parser
+git clone https://github.com/fachhr/setselect-parser.git
+cd setselect-parser
 ```
 
 2. Install dependencies:
@@ -168,7 +168,7 @@ Health check endpoint.
   "status": "ok",
   "timestamp": "2025-01-15T17:00:00.000Z",
   "uptime": 3600.5,
-  "service": "silv ias-list-parser",
+  "service": "setselect-parser",
   "version": "1.0.0"
 }
 ```
@@ -280,7 +280,7 @@ This trigger automatically syncs parsed CV data from `cv_parsing_jobs` to `user_
    - Go to [Railway.app](https://railway.app)
    - Click "New Project"
    - Select "Deploy from GitHub repo"
-   - Choose `silvias-list-parser`
+   - Choose `setselect-parser`
 
 4. Configure environment variables:
    - Go to project → Variables
@@ -473,4 +473,4 @@ Private - All Rights Reserved
 
 **Version**: 1.0.0
 **Last Updated**: 2025-01-15
-**Maintained By**: Silvia's List Team
+**Maintained By**: SetSelect Team

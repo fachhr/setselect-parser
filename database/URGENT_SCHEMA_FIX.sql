@@ -1,5 +1,5 @@
 -- ============================================================================
--- URGENT SCHEMA FIX FOR SILVIA'S LIST
+-- URGENT SCHEMA FIX FOR SETSELECT
 -- ============================================================================
 --
 -- PROBLEM: The cv_parsing_jobs table is missing the extracted_data column

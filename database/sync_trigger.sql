@@ -1,5 +1,5 @@
 -- ============================================================================
--- Silvia's List - Automatic Data Sync Trigger
+-- SetSelect - Automatic Data Sync Trigger
 -- ============================================================================
 -- Purpose: Automatically sync parsed CV data from cv_parsing_jobs to user_profiles
 -- When: After parser completes CV extraction

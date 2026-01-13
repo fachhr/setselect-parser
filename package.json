@@ -1,7 +1,7 @@
 {
-  "name": "silvias-list-parser",
+  "name": "setselect-parser",
   "version": "1.0.0",
-  "description": "AI-powered CV parser for Silvia's List talent pool platform",
+  "description": "AI-powered CV parser for SetSelect talent pool platform",
   "main": "index.js",
   "type": "module",
   "scripts": {

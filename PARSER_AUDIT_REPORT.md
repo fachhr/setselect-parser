@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Deep audit of silvias-list-parser revealed **3 critical mismatches** between the parser (designed for old CV generator project) and Silvia's List infrastructure.
+Deep audit of setselect-parser revealed **3 critical mismatches** between the parser (designed for old CV generator project) and SetSelect infrastructure.
 
 ---
 
@@ -19,7 +19,7 @@ Deep audit of silvias-list-parser revealed **3 critical mismatches** between the
 
 **Problem:**
 - Parser was hardcoded to use `raw-cvs` bucket (from old project)
-- Silvia's List uses `talent-pool-cvs` bucket
+- SetSelect uses `talent-pool-cvs` bucket
 
 **Fix Applied:**
 ```javascript
@@ -39,13 +39,13 @@ await supabase.storage.from('talent-pool-cvs').download(storagePath);
 
 **Problem:**
 - Parser was querying `clerk_user_id` and `is_quick` columns
-- These columns don't exist in Silvia's List schema
+- These columns don't exist in SetSelect schema
 - Caused: `column cv_parsing_jobs.clerk_user_id does not exist` error
 
 **Fix Applied:**
 - Removed database query for non-existent columns
 - Simplified to extract profile ID directly from storagePath
-- Set `isQuickCV = false` (not used in Silvia's List)
+- Set `isQuickCV = false` (not used in SetSelect)
 
 **Status:** ✅ Fixed in commit cc8c3f1
 
@@ -75,7 +75,7 @@ The `cv_parsing_jobs` table in your Supabase database is missing the `extracted_
    IF NEW.status = 'completed' AND NEW.extracted_data IS NOT NULL THEN
    ```
 
-3. **Migration doesn't create it:** `SILVIAS_LIST_MIGRATION.sql:151-159`
+3. **Migration doesn't create it:** `SETSELECT_MIGRATION.sql:151-159`
    ```sql
    CREATE TABLE IF NOT EXISTS cv_parsing_jobs (
      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -120,7 +120,7 @@ await supabase.storage
 - `cv_parsing_jobs` ✅ Correct
 - `user_profiles` ✅ Correct (via trigger)
 
-**Status:** ✅ All table names match Silvia's List schema
+**Status:** ✅ All table names match SetSelect schema
 
 ---
 
@@ -191,7 +191,7 @@ await supabase.storage
 3. ✅ Compared database schema with parser expectations
 4. ✅ Checked column names in all UPDATE/INSERT queries
 5. ✅ Validated trigger dependencies
-6. ✅ Cross-referenced with Silvia's List migration file
+6. ✅ Cross-referenced with SetSelect migration file
 
 **Tools Used:**
 - `grep` for pattern matching across codebase
@@ -209,7 +209,7 @@ The parser was originally built for the **my-cv-generator** project which had:
 - Clerk authentication system
 - Quick CV mode
 
-Silvia's List is a **simplified talent pool** version without:
+SetSelect is a **simplified talent pool** version without:
 - Clerk authentication
 - Quick CV mode
 - User accounts (just email-based profiles)

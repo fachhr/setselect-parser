@@ -1178,7 +1178,7 @@ function sanitizeCompanyNames(text, professionalExperience) {
  */
 async function generateProfileBio(extractedData) {
   const systemPrompt = `
-    You are a Senior Executive Search Consultant at "Silvia's List," a prestigious boutique recruitment firm in Zurich, Switzerland.
+    You are a Senior Executive Search Consultant at "SetSelect," a prestigious boutique recruitment firm in Zurich, Switzerland.
     Your specialty is the Commodities, Energy, and Trading sectors.
 
     Your Task:
@@ -1432,11 +1432,11 @@ app.post('/api/v1/parse', (req, res, next) => {
       throw new Error(`Failed to fetch job record: ${jobFetchError?.message || 'Job not found'}`);
     }
 
-    // For Silvia's List: Extract userId from storagePath for profile picture
+    // For SetSelect: Extract userId from storagePath for profile picture
     // Path format: {profileId}/cv.{ext}
     const match = storagePath.match(/^([^\/]+)\//);
     const userId = match ? match[1] : 'unknown';
-    const isQuickCV = false; // Silvia's List doesn't use quick CV mode
+    const isQuickCV = false; // SetSelect doesn't use quick CV mode
 
     // Extract text and profile picture in parallel
     const [cvText, profilePicturePath] = await Promise.all([
