@@ -1,0 +1,8 @@
+[phases.install]
+cmds = ["npm ci --include=optional", "npm rebuild sharp --platform=linux --arch=x64"]
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = "npm start"
