@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --env-file=.env index.js"
+    "dev": "node --env-file=.env index.js",
+    "postinstall": "npm rebuild sharp"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
