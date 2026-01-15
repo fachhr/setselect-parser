@@ -1106,12 +1106,21 @@ CRITICAL EXTRACTION RULES:
     - "Asset Manager" (BlackRock, Vanguard, PIMCO)
     - "Hedge Fund" (Citadel, Bridgewater, Two Sigma)
     - "Private Equity" (KKR, Blackstone, Carlyle)
-    - "Strategy Consultancy" (McKinsey, BCG, Bain)
     - "Big 4 / Accounting" (Deloitte, PwC, KPMG, EY)
     - "Tech Company" (Google, Microsoft, Meta)
     - "Renewable Energy" (Ørsted, Vestas, First Solar)
 
-    **Important:** You are NOT limited to these categories - classify dynamically based on your knowledge of the company.
+    **Consultancy - BE SPECIFIC (avoid generic "Consulting"):**
+    - "Management Consultancy" (Accenture, McKinsey, BCG, Bain, Roland Berger, Oliver Wyman)
+    - "Strategy Consultancy" (McKinsey, BCG, Bain - for pure strategy roles)
+    - "Tech Consultancy" (Accenture, Capgemini, Infosys, Wipro, TCS - for tech-focused roles)
+
+    **Academic/Research - BE SPECIFIC (avoid generic "Academic"):**
+    - "University" (ETH Zurich, MIT, Stanford, Oxford, any university)
+    - "Research Institute" (Max Planck, Fraunhofer, CERN)
+    - "Think Tank" (Brookings, RAND)
+
+    **Important:** You are NOT limited to these categories - classify dynamically based on your knowledge of the company. But AVOID generic terms like "Consulting" or "Academic" - always use more specific classifications.
 
 17. **POSITION NORMALIZATION** - For each job, create a normalized short title for display (max 30 characters).
 
@@ -1133,6 +1142,13 @@ CRITICAL EXTRACTION RULES:
 
     **Keep these unchanged** (already short/standard):
     - Analyst, Associate, Trader, Developer, Engineer, Manager, Director, VP, SVP, MD, Partner
+
+    **Student/Extracurricular roles - simplify:**
+    - "Co-organizer Online Contest" → "Event Organizer"
+    - "President of Student Association" → "Student President"
+    - "Vice President of Finance Club" → "VP Finance Club"
+    - "Teaching Assistant" → "Teaching Assistant" (keep as-is)
+    - "Research Assistant" → "Research Assistant" (keep as-is)
 
 EXPECTED JSON OUTPUT STRUCTURE:
 ${jsonStructure}
