@@ -1,6 +1,6 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
+import OpenAI, { AzureOpenAI } from 'openai';
 import pdf from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import { PDFDocument, PDFName } from 'pdf-lib';
@@ -40,7 +40,15 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const useAzureOpenAI = !!process.env.AZURE_OPENAI_ENDPOINT;
+const openai = useAzureOpenAI
+  ? new AzureOpenAI({
+      apiKey: process.env.AZURE_OPENAI_API_KEY,
+      endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+      apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-10-21',
+      deployment: process.env.AZURE_OPENAI_DEPLOYMENT_PARSING || 'gpt-4o',
+    })
+  : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ==========================================
 // CONSTANTS
