@@ -26,10 +26,12 @@
 --   - Technical, soft, and industry-specific skills
 --   - Certifications
 --   - Professional interests
+--   - Functional expertise (prefers merged parser+user result)
 --   - Extracurricular activities
 --   - Projects
 --   - Enhanced contact information (address, GitHub, portfolio)
 --   - Profile picture storage path
+--   - Profile bio and short summary
 --   - Parsing completion timestamp
 --
 -- Error Handling:
@@ -84,12 +86,30 @@ BEGIN
       ),
 
       -- ================================================================
-      -- LANGUAGES
+      -- LANGUAGES (merge: parser wins on conflict, user entries preserved)
       -- ================================================================
       -- Array of languages with proficiency levels (A1-C2)
-      base_languages = COALESCE(
-        (NEW.extracted_data->>'base_languages')::JSONB,
-        base_languages
+      -- Column renamed from base_languages → languages (015_consolidate_languages)
+      -- extracted_data key remains 'base_languages' (parser output unchanged)
+      languages = (
+        SELECT COALESCE(jsonb_agg(merged ORDER BY merged->>'language'), '[]'::jsonb)
+        FROM (
+          -- Parser languages take priority (have proficiency)
+          SELECT elem AS merged FROM jsonb_array_elements(
+            COALESCE((NEW.extracted_data->>'base_languages')::JSONB, '[]'::jsonb)
+          ) AS elem
+          UNION ALL
+          -- Keep user-provided languages not found by parser
+          SELECT existing AS merged FROM jsonb_array_elements(
+            COALESCE(languages, '[]'::jsonb)
+          ) AS existing
+          WHERE NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(
+              COALESCE((NEW.extracted_data->>'base_languages')::JSONB, '[]'::jsonb)
+            ) AS parsed
+            WHERE LOWER(parsed->>'language') = LOWER(existing->>'language')
+          )
+        ) combined
       ),
 
       -- ================================================================
@@ -126,6 +146,16 @@ BEGIN
       professional_interests = COALESCE(
         (NEW.extracted_data->>'professional_interests')::JSONB,
         professional_interests
+      ),
+
+      -- Functional expertise (merged value preferred)
+      functional_expertise = COALESCE(
+        CASE
+          WHEN NEW.extracted_data ? 'functional_expertise_merged'
+            THEN (NEW.extracted_data->>'functional_expertise_merged')::JSONB
+          ELSE (NEW.extracted_data->>'functional_expertise')::JSONB
+        END,
+        functional_expertise
       ),
 
       -- ================================================================
@@ -190,6 +220,12 @@ BEGIN
         profile_bio
       ),
 
+      -- Candidate short summary for cards/previews
+      short_summary = COALESCE(
+        NEW.extracted_data->>'short_summary',
+        short_summary
+      ),
+
       -- ================================================================
       -- SYSTEM TIMESTAMP
       -- ================================================================
@@ -233,9 +269,25 @@ BEGIN
         professional_experience
       ),
 
-      base_languages = COALESCE(
-        (NEW.extracted_data->>'base_languages')::JSONB,
-        base_languages
+      -- Languages (merge: parser wins on conflict, user entries preserved)
+      -- Column renamed from base_languages → languages (015_consolidate_languages)
+      languages = (
+        SELECT COALESCE(jsonb_agg(merged ORDER BY merged->>'language'), '[]'::jsonb)
+        FROM (
+          SELECT elem AS merged FROM jsonb_array_elements(
+            COALESCE((NEW.extracted_data->>'base_languages')::JSONB, '[]'::jsonb)
+          ) AS elem
+          UNION ALL
+          SELECT existing AS merged FROM jsonb_array_elements(
+            COALESCE(languages, '[]'::jsonb)
+          ) AS existing
+          WHERE NOT EXISTS (
+            SELECT 1 FROM jsonb_array_elements(
+              COALESCE((NEW.extracted_data->>'base_languages')::JSONB, '[]'::jsonb)
+            ) AS parsed
+            WHERE LOWER(parsed->>'language') = LOWER(existing->>'language')
+          )
+        ) combined
       ),
 
       technical_skills = COALESCE(
@@ -263,6 +315,16 @@ BEGIN
         professional_interests
       ),
 
+      -- Functional expertise (merged value preferred)
+      functional_expertise = COALESCE(
+        CASE
+          WHEN NEW.extracted_data ? 'functional_expertise_merged'
+            THEN (NEW.extracted_data->>'functional_expertise_merged')::JSONB
+          ELSE (NEW.extracted_data->>'functional_expertise')::JSONB
+        END,
+        functional_expertise
+      ),
+
       extracurricular_activities = COALESCE(
         (NEW.extracted_data->>'extracurricular_activities')::JSONB,
         extracurricular_activities
@@ -276,6 +338,11 @@ BEGIN
       profile_bio = COALESCE(
         NEW.extracted_data->>'profile_bio',
         profile_bio
+      ),
+
+      short_summary = COALESCE(
+        NEW.extracted_data->>'short_summary',
+        short_summary
       ),
 
       parsing_completed_at = NEW.completed_at
