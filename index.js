@@ -1068,7 +1068,7 @@ CRITICAL EXTRACTION RULES:
 11. **SKILLS CLASSIFICATION** - Classify skills appropriately:
     - technical_skills: Programming languages, frameworks, tools, software
     - soft_skills: Communication, leadership, problem-solving, teamwork
-    - industry_specific_skills: Domain-specific expertise (e.g., "Finance: Financial Modeling")
+    - industry_specific_skills: Domain knowledge, methodologies, and business expertise. This includes trading strategies, financial instruments, risk frameworks, market analysis approaches, regulatory knowledge, and sector-specific expertise (e.g., "Energy & Commodities Trading", "Derivatives & Hedging", "VaR & Stress Testing", "Portfolio Optimization", "Financial Modeling"). Do NOT put domain/business expertise into technical_skills — if a skill is about WHAT the person knows about a domain, it goes here, not in technical_skills.
 
 12. **EDUCATION DETAILS** - Extract grades, GPA, class rank, thesis information, and relevant coursework when available.
 
