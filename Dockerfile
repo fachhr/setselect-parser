@@ -1,5 +1,5 @@
 # Stage 1: Install dependencies
-FROM node:18-slim AS deps
+FROM node:20-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ && rm -rf /var/lib/apt/lists/*
@@ -7,7 +7,7 @@ COPY package.json ./
 RUN npm install --include=optional --platform=linux --arch=x64
 
 # Stage 2: Production image
-FROM node:18-slim AS runner
+FROM node:20-slim AS runner
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libvips42 && rm -rf /var/lib/apt/lists/*
