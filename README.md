@@ -4,7 +4,7 @@ AI-powered CV parsing service for extracting structured data from resumes. This 
 
 ## Features
 
-- 🤖 **AI-Powered Extraction**: Uses OpenAI GPT-4o for intelligent CV parsing
+- 🤖 **AI-Powered Extraction**: Uses OpenAI models for intelligent CV parsing (default: GPT-4.1)
 - 📸 **Profile Picture Detection**: AI vision-based profile picture extraction
 - 📄 **Multi-Format Support**: Handles PDF and DOCX files
 - 🔄 **Two-Pass Parsing**: Enhanced accuracy for uncertain fields
@@ -17,7 +17,7 @@ AI-powered CV parsing service for extracting structured data from resumes. This 
 
 - **Runtime**: Node.js
 - **Framework**: Express.js
-- **AI/ML**: OpenAI GPT-4o, OpenAI Vision API
+- **AI/ML**: OpenAI GPT-4.1 (parsing), GPT-4.1-nano (vision/summaries)
 - **PDF Parsing**: pdf-parse
 - **DOCX Parsing**: mammoth
 - **Image Processing**: sharp, pdf-lib
@@ -75,7 +75,7 @@ AI-powered CV parsing service for extracting structured data from resumes. This 
 
 - Node.js 18+ installed
 - Supabase project with talent pool schema
-- OpenAI API key with GPT-4o access
+- OpenAI API key with access to your configured parsing/vision models
 
 ### Installation
 
@@ -102,6 +102,9 @@ INTERNAL_API_KEY="generate-strong-random-key"
 SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
 OPENAI_API_KEY="sk-proj-your-key"
+OPENAI_MODEL_PARSING="gpt-4.1"
+OPENAI_MODEL_VISION="gpt-4.1-nano"
+OPENAI_MODEL_SUMMARY="gpt-4.1-nano"
 
 # Optional (recommended defaults shown)
 CONFIDENCE_THRESHOLD=70
@@ -186,7 +189,7 @@ Frontend → Supabase Storage → user_profiles Record Created (17 fields)
                 ↓
          Extract Text (PDF/DOCX)
                 ↓
-         AI Parsing (OpenAI GPT-4o)
+         AI Parsing (OpenAI model configured via env)
                 ↓
          Profile Picture Extraction (Vision API)
                 ↓
@@ -425,7 +428,7 @@ curl -X POST https://your-app.railway.app/parse \
 - Ensure Railway app is deployed and running
 
 ### OpenAI API errors
-- Verify API key is valid and has GPT-4o access
+- Verify API key is valid and has GPT-4.1 access
 - Check API quota and billing
 - Monitor rate limits
 
@@ -485,6 +488,6 @@ Private - All Rights Reserved
 
 ---
 
-**Version**: 1.0.0
-**Last Updated**: 2025-01-15
+**Version**: 3.0.0
+**Last Updated**: 2026-02-20
 **Maintained By**: SetSelect Team

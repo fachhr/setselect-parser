@@ -46,7 +46,7 @@ const openai = useAzureOpenAI
       apiKey: process.env.AZURE_OPENAI_API_KEY,
       endpoint: process.env.AZURE_OPENAI_ENDPOINT,
       apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-10-21',
-      deployment: process.env.AZURE_OPENAI_DEPLOYMENT_PARSING || 'gpt-4o',
+      deployment: process.env.AZURE_OPENAI_DEPLOYMENT_PARSING || process.env.OPENAI_MODEL_PARSING || 'gpt-4.1',
     })
   : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -62,8 +62,9 @@ const IMAGE_MAX_CANDIDATES = 5; // Max images to analyze with Vision API
 const PDF_MAX_PAGES_TO_SCAN = 2; // Only scan first N pages for images
 
 // OpenAI API configuration
-const OPENAI_MODEL_PARSING = 'gpt-4o'; // Model for CV text parsing
-const OPENAI_MODEL_VISION = 'gpt-4o-mini'; // Model for image analysis
+const OPENAI_MODEL_PARSING = process.env.OPENAI_MODEL_PARSING || 'gpt-4.1'; // Model for CV text parsing
+const OPENAI_MODEL_VISION = process.env.OPENAI_MODEL_VISION || 'gpt-4.1-nano'; // Model for image analysis
+const OPENAI_MODEL_SUMMARY = process.env.OPENAI_MODEL_SUMMARY || 'gpt-4.1-nano'; // Model for short text summaries
 const OPENAI_TEMP_PARSING = 0; // Temperature for parsing (0 = fully deterministic for consistent company classification)
 const OPENAI_TEMP_VISION = 0.3; // Temperature for vision analysis
 const OPENAI_MAX_TOKENS_VISION = 200; // Max tokens for vision response
@@ -89,8 +90,8 @@ const getOptionsStringForSimpleArray = (optionsArray) => {
     .join(', ');
 };
 
-// Convert file to text
-async function convertFileToText(storagePath) {
+// Prepare file for parsing — returns PDF buffer or cleaned HTML from DOCX
+async function prepareFileForParsing(storagePath) {
   const { data, error } = await supabase.storage.from('talent-pool-cvs').download(storagePath);
 
   if (error) {
@@ -99,12 +100,14 @@ async function convertFileToText(storagePath) {
   }
 
   const buffer = Buffer.from(await data.arrayBuffer());
+
   if (storagePath.toLowerCase().endsWith('.pdf')) {
-    const pdfData = await pdf(buffer);
-    return pdfData.text;
+    return { type: 'pdf', buffer };
   } else if (storagePath.toLowerCase().endsWith('.docx')) {
-    const { value } = await mammoth.extractRawText({ buffer });
-    return value;
+    const { value } = await mammoth.convertToHtml({ buffer });
+    // Strip base64 images (can be huge) but keep all structural HTML tags
+    const cleanHtml = value.replace(/<img[^>]*src="data:[^"]*"[^>]*\/?>/g, '');
+    return { type: 'html', content: cleanHtml };
   } else {
     throw new Error('Unsupported file type. Please upload a PDF or DOCX file.');
   }
@@ -956,12 +959,8 @@ function mergeFunctionalExpertise(userExpertise, parserExpertise) {
 // OPENAI PARSING PROMPTS
 // ==========================================
 
-// Create comprehensive first-pass parsing prompt
-function createComprehensiveParsingPrompt(cvText) {
-  if (!cvText || typeof cvText !== 'string') {
-    throw new Error('Invalid CV text provided for parsing');
-  }
-
+// Get parsing instructions (rules + JSON schema) — shared between PDF and DOCX paths
+function getParsingInstructions() {
   // Dynamically generate all possible option strings
   const countries = getOptionsString(COUNTRY_OPTIONS);
   const generalFields = getOptionsString(GENERAL_FIELD_OPTIONS);
@@ -1067,6 +1066,8 @@ CRITICAL EXTRACTION RULES:
 
 3. **EXTRACT RAW BULLET POINTS** - For each job in professional_experience, extract ALL bullet points, achievements, and responsibilities EXACTLY as they appear in the CV. Put each bullet point as a separate string in the "raw_bullet_points" array. Do NOT convert to any specific format - keep them as-is.
 
+3b. **STANDALONE ACHIEVEMENTS** - If the CV has a separate "Achievements" or "Key Achievements" section not tied to a specific job, include these achievements in the raw_bullet_points of the MOST RELEVANT job (typically the most recent/current position), prefixed with "[Achievement] " to distinguish them from regular responsibilities.
+
 4. **URL FORMATTING** - All URLs (linkedinUrl, githubUrl, portfolioUrl, certification URLs, project links) MUST include the full https:// prefix.
 
 5. **PHONE NUMBER SPLITTING** - Split phone numbers into two parts:
@@ -1085,7 +1086,13 @@ CRITICAL EXTRACTION RULES:
 
 11. **SKILLS CLASSIFICATION** - Classify skills appropriately:
     - technical_skills: Programming languages, frameworks, tools, software
-    - soft_skills: Communication, leadership, problem-solving, teamwork
+    - soft_skills: Communication, leadership, problem-solving, teamwork, etc.
+      Infer soft skills from experience descriptions, not just explicit skill lists. Look for:
+      - "relationship management" / "stakeholder management" → Relationship Management
+      - "led team" / "managed team" → Leadership
+      - "cross-functional" / "collaborated" → Collaboration
+      - "mentored" / "trained" → Mentoring
+      - "negotiated" / "contracts" → Negotiation
     - industry_specific_skills: Domain knowledge, methodologies, and business expertise. This includes trading strategies, financial instruments, risk frameworks, market analysis approaches, regulatory knowledge, and sector-specific expertise (e.g., "Energy & Commodities Trading", "Derivatives & Hedging", "VaR & Stress Testing", "Portfolio Optimization", "Financial Modeling"). Do NOT put domain/business expertise into technical_skills — if a skill is about WHAT the person knows about a domain, it goes here, not in technical_skills.
 
 12. **EDUCATION DETAILS** - Extract grades, GPA, class rank, thesis information, and relevant coursework when available.
@@ -1185,11 +1192,33 @@ CRITICAL EXTRACTION RULES:
     Always use the exact value string (e.g., 'Fluent', not 'Native' or 'C2').
 
 EXPECTED JSON OUTPUT STRUCTURE:
-${jsonStructure}
+${jsonStructure}`;
+}
 
-CV TEXT TO PARSE:
+// Create text-based parsing prompt for DOCX HTML or plain text content
+function createTextParsingPrompt(content, format = 'html') {
+  if (!content || typeof content !== 'string') {
+    throw new Error('Invalid content provided for parsing');
+  }
+
+  const instructions = getParsingInstructions();
+
+  const preamble = format === 'html'
+    ? `The CV content below is in HTML format extracted from a DOCX file. The HTML tags (headings, lists,
+bold, links) provide structural context. IMPORTANT: If the CV uses a multi-column layout, sections
+may appear in a non-standard order (e.g., sidebar content before main content). Use section headings
+and contextual clues to correctly group information regardless of ordering.
+
+CV CONTENT (HTML):`
+    : `The CV content below is plain text extracted from a PDF file.
+
+CV CONTENT:`;
+
+  return `${instructions}
+
+${preamble}
 ---
-${cvText}
+${content}
 ---
 
 Remember: ALL text in the output MUST be in English. Translate any non-English text while keeping the exact meaning and detail intact.
@@ -1303,6 +1332,7 @@ async function generateProfileBio(extractedData) {
     ${JSON.stringify(extractedData, null, 2)}
 
     Note:
+    - The candidate's HOME location is in contact_address (city, country). Do NOT use the professional_experience city/country as the candidate's location — those are EMPLOYER locations, not where the candidate lives.
     - Expand Canton codes (e.g., 'ZG' -> 'Zug', 'ZH' -> 'Zurich', 'TI' -> 'Ticino').
     - If there is a 'highlight' field with a quote, paraphrase it into a professional achievement statement.
     - Salary should NOT be mentioned in the bio.
@@ -1313,7 +1343,7 @@ async function generateProfileBio(extractedData) {
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // Cost-efficient for short summaries
+      model: OPENAI_MODEL_SUMMARY,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -1383,7 +1413,7 @@ ${JSON.stringify(extractedData, null, 2)}
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: OPENAI_MODEL_SUMMARY,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -1402,24 +1432,84 @@ ${JSON.stringify(extractedData, null, 2)}
 // MAIN PARSING LOGIC WITH TWO-STAGE APPROACH
 // ==========================================
 
-async function parseCV(cvText, jobId) {
-  if (!cvText || typeof cvText !== 'string') {
-    throw new Error('Invalid CV text provided');
+async function parseCV(input, jobId) {
+  if (!input || !input.type) {
+    throw new Error('Invalid input provided — expected { type, buffer } or { type, content }');
   }
   if (!jobId) {
     throw new Error('Job ID is required');
   }
 
-  console.log(`[Job ${jobId}] Starting first-pass comprehensive extraction...`);
+  console.log(`[Job ${jobId}] Starting first-pass comprehensive extraction (${input.type} input)...`);
 
   // FIRST PASS: Comprehensive extraction
-  const firstPassPrompt = createComprehensiveParsingPrompt(cvText);
-  const firstPassCompletion = await openai.chat.completions.create({
-    model: OPENAI_MODEL_PARSING,
-    response_format: { type: "json_object" },
-    messages: [{ role: "user", content: firstPassPrompt }],
-    temperature: OPENAI_TEMP_PARSING,
-  });
+  const instructions = getParsingInstructions();
+  let messages;
+  let cvTextForSecondPass; // plain text fallback for two-pass focused prompts
+
+  if (input.type === 'pdf') {
+    // Native PDF file input — model sees both extracted text and rendered page images
+    const base64 = input.buffer.toString('base64');
+    messages = [{
+      role: 'user',
+      content: [
+        {
+          type: 'file',
+          file: {
+            filename: 'cv.pdf',
+            file_data: `data:application/pdf;base64,${base64}`
+          }
+        },
+        {
+          type: 'text',
+          text: instructions + '\n\nExtract all data from the attached PDF document and return ONLY the JSON object.'
+        }
+      ]
+    }];
+  } else {
+    // DOCX HTML path
+    messages = [{
+      role: 'user',
+      content: createTextParsingPrompt(input.content)
+    }];
+    cvTextForSecondPass = input.content;
+  }
+
+  let firstPassCompletion;
+
+  if (input.type === 'pdf') {
+    try {
+      // Try native PDF file input first (best quality — model sees visual layout)
+      firstPassCompletion = await openai.chat.completions.create({
+        model: OPENAI_MODEL_PARSING,
+        response_format: { type: "json_object" },
+        messages,
+        temperature: OPENAI_TEMP_PARSING,
+      });
+    } catch (pdfInputError) {
+      // Fallback to text extraction if native PDF input fails
+      console.warn(`[Job ${jobId}] Native PDF input failed, falling back to text extraction:`, pdfInputError.message);
+      const pdfData = await pdf(input.buffer);
+      cvTextForSecondPass = pdfData.text;
+      messages = [{
+        role: 'user',
+        content: createTextParsingPrompt(pdfData.text, 'text')
+      }];
+      firstPassCompletion = await openai.chat.completions.create({
+        model: OPENAI_MODEL_PARSING,
+        response_format: { type: "json_object" },
+        messages,
+        temperature: OPENAI_TEMP_PARSING,
+      });
+    }
+  } else {
+    firstPassCompletion = await openai.chat.completions.create({
+      model: OPENAI_MODEL_PARSING,
+      response_format: { type: "json_object" },
+      messages,
+      temperature: OPENAI_TEMP_PARSING,
+    });
+  }
 
   let extractedData = JSON.parse(firstPassCompletion.choices[0].message.content);
   console.log(`[Job ${jobId}] First pass completed. Fields extracted: ${Object.keys(extractedData).length}`);
@@ -1445,7 +1535,9 @@ async function parseCV(cvText, jobId) {
 
   // TWO-STAGE PARSING for critical ambiguous fields (if enabled)
   // Note: years_of_experience is handled by inference logic, not two-pass parsing
-  if (ENABLE_TWO_PASS) {
+  // Two-pass is skipped for native PDF success path (cvTextForSecondPass is only set on
+  // fallback or DOCX), since native PDF first-pass has higher quality from visual layout.
+  if (ENABLE_TWO_PASS && cvTextForSecondPass) {
     const uncertainFields = [];
 
     // Reserved for future critical fields that need focused extraction
@@ -1455,7 +1547,7 @@ async function parseCV(cvText, jobId) {
       console.log(`[Job ${jobId}] Second-pass parsing for uncertain fields: ${uncertainFields.map(f => f.field).join(', ')}`);
 
       for (const { field, options } of uncertainFields) {
-        const focusedPrompt = createFocusedPrompt(field, cvText, options);
+        const focusedPrompt = createFocusedPrompt(field, cvTextForSecondPass, options);
         if (focusedPrompt) {
           try {
             const refinedCompletion = await openai.chat.completions.create({
@@ -1499,7 +1591,7 @@ async function parseCV(cvText, jobId) {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'cv-parser-service', version: '2.2.0' });
+  res.json({ status: 'ok', service: 'cv-parser-service', version: '3.0.0' });
 });
 
 // Main parsing endpoint
@@ -1540,9 +1632,9 @@ app.post('/api/v1/parse', (req, res, next) => {
     const userId = match ? match[1] : 'unknown';
     const isQuickCV = false; // SetSelect doesn't use quick CV mode
 
-    // Extract text and profile picture in parallel
-    const [cvText, profilePicturePath] = await Promise.all([
-      convertFileToText(storagePath),
+    // Prepare file input and extract profile picture in parallel
+    const [cvInput, profilePicturePath] = await Promise.all([
+      prepareFileForParsing(storagePath),
       (async () => {
         try {
           return await extractProfilePicture(storagePath, userId, isQuickCV);
@@ -1554,7 +1646,7 @@ app.post('/api/v1/parse', (req, res, next) => {
       })()
     ]);
 
-    const extractedData = await parseCV(cvText, jobId);
+    const extractedData = await parseCV(cvInput, jobId);
 
     // Add profile picture path to extracted data
     if (profilePicturePath) {
@@ -1699,7 +1791,7 @@ app.post('/api/v1/parse', (req, res, next) => {
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`======================================`);
-  console.log(`CV Parser Service v2.2.0`);
+  console.log(`CV Parser Service v3.0.0`);
   console.log(`Listening on port ${PORT}`);
   console.log(`Two-pass parsing: ${ENABLE_TWO_PASS ? 'ENABLED' : 'DISABLED'}`);
   console.log(`Field inference: ${ENABLE_INFERENCE ? 'ENABLED' : 'DISABLED'}`);

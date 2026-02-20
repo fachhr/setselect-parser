@@ -108,6 +108,7 @@ BEGIN
               COALESCE((NEW.extracted_data->>'base_languages')::JSONB, '[]'::jsonb)
             ) AS parsed
             WHERE LOWER(parsed->>'language') = LOWER(existing->>'language')
+               OR LOWER(existing->>'language') LIKE LOWER(parsed->>'language') || ' %'
           )
         ) combined
       ),
@@ -287,6 +288,7 @@ BEGIN
               COALESCE((NEW.extracted_data->>'base_languages')::JSONB, '[]'::jsonb)
             ) AS parsed
             WHERE LOWER(parsed->>'language') = LOWER(existing->>'language')
+               OR LOWER(existing->>'language') LIKE LOWER(parsed->>'language') || ' %'
           )
         ) combined
       ),

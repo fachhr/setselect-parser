@@ -343,6 +343,8 @@ export const DEGREE_TYPE_OPTIONS = [
   { value: "MBA", label: "MBA (Master of Business Administration)" },
   // Doctoral
   { value: "PhD", label: "PhD (Doctorate)" },
+  // Professional Certificates
+  { value: "Certificate", label: "Certificate / Professional Certificate" },
   // Swiss-Specific Certifications
   { value: "CAS", label: "CAS (Certificate Advanced Studies)" },
   { value: "DAS", label: "DAS (Diploma Advanced Studies)" },
