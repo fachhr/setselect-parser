@@ -715,11 +715,14 @@ function validateAndCorrectData(extractedData) {
         }
       }
 
+      const certificateTypes = ['Certificate', 'CAS', 'DAS', 'Federal Diploma'];
+      const isCertificate = certificateTypes.includes(finalDegreeType);
+
       return {
         ...edu,
         degreeType: finalDegreeType,
-        generalField: validateFieldValue('generalField', edu.generalField, GENERAL_FIELD_OPTIONS),
-        specificField: validateFieldValue('specificField', edu.specificField, SPECIFIC_FIELD_OPTIONS),
+        generalField: isCertificate ? null : validateFieldValue('generalField', edu.generalField, GENERAL_FIELD_OPTIONS),
+        specificField: isCertificate ? null : validateFieldValue('specificField', edu.specificField, SPECIFIC_FIELD_OPTIONS),
         country: validateFieldValue('country', edu.country, COUNTRY_OPTIONS),
         startDate: validateAndCorrectDate(edu.startDate),
         endDate: validateAndCorrectDate(edu.endDate),
@@ -1224,6 +1227,8 @@ CRITICAL EXTRACTION RULES:
     - Law: LLB → 'BA', LLM → 'MA', JD → 'MA'.
     - Engineering diplomas: 'BSc' minimum, 'MSc' if 5-year integrated program.
     - Postgraduate Diploma / Graduate Certificate → 'Certificate'.
+
+    **For certificate-type degrees** (Certificate, CAS, DAS, Federal Diploma): set generalField and specificField to null. The certificate name already describes the field of study and is captured in the certifications array. Do not force-fit these into a dropdown category.
 
     **WARNING: AS (Associate of Science) and AA (Associate of Arts) are ONLY for US-style 2-year community college degrees. Do NOT assign Associate degrees to European, Asian, or other international qualifications.**
 
