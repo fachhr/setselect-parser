@@ -387,7 +387,8 @@ export const LANGUAGE_PROFICIENCY_OPTIONS = [
   { value: "Beginner", label: "Beginner (A1-A2)" },
   { value: "Intermediate", label: "Intermediate (B1-B2)" },
   { value: "Advanced", label: "Advanced (C1)" },
-  { value: "Fluent", label: "Fluent/Native (C2)" },
+  { value: "Fluent", label: "Fluent (C2)" },
+  { value: "Native", label: "Native" },
 ];
 
 export const SKILL_PROFICIENCY_OPTIONS = [

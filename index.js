@@ -555,20 +555,70 @@ function fuzzyMatchToOptions(value, optionsArray, threshold = 0.7) {
     });
   if (labelMatch) return labelMatch.value;
 
-  // Common mappings for countries and proficiency synonyms
+  // Common mappings for countries, proficiency synonyms, degrees
   const commonMappings = {
     // Countries
     'usa': 'United States',
     'uk': 'United Kingdom',
     'uae': 'United Arab Emirates',
     // Language proficiency synonyms not in any label
-    'mother tongue': 'Fluent',
-    'elementary': 'Beginner',
-    'basic': 'Beginner',
+    'mother tongue': 'Native',
+    'native': 'Native',
+    'native speaker': 'Native',
+    'langue maternelle': 'Native',
+    'muttersprache': 'Native',
+    'full professional proficiency': 'Fluent',
+    'courant': 'Fluent',
+    'fließend': 'Fluent',
+    'professional': 'Advanced',
+    'proficient': 'Advanced',
+    'professional working proficiency': 'Intermediate',
+    'limited working proficiency': 'Intermediate',
     'conversational': 'Intermediate',
     'working proficiency': 'Intermediate',
-    'proficient': 'Advanced',
     'professional working': 'Intermediate',
+    'elementary': 'Beginner',
+    'basic': 'Beginner',
+    'grundkenntnisse': 'Beginner',
+    'notions': 'Beginner',
+    // Degree type mappings
+    'master of science': 'MSc',
+    'master of arts': 'MA',
+    'master of engineering': 'MSc',
+    'master of law': 'MA',
+    'master of laws': 'MA',
+    'master of business administration': 'MBA',
+    'master of advanced studies': 'MAS',
+    'master of public administration': 'MA',
+    'master of finance': 'MSc',
+    'master of public health': 'MSc',
+    'master of education': 'MA',
+    'bachelor of science': 'BSc',
+    'bachelor of arts': 'BA',
+    'bachelor of engineering': 'BSc',
+    'bachelor of commerce': 'BSc',
+    'bachelor of technology': 'BSc',
+    'bachelor of laws': 'BA',
+    'bachelor of law': 'BA',
+    'llm': 'MA',
+    'llb': 'BA',
+    'mba': 'MBA',
+    'mas': 'MAS',
+    'btech': 'BSc',
+    'mtech': 'MSc',
+    'bcom': 'BSc',
+    'diplom': 'MSc',
+    'diplom-ingenieur': 'MSc',
+    'diplom-kaufmann': 'MSc',
+    'licence': 'BA',
+    'maîtrise': 'MSc',
+    'maitrise': 'MSc',
+    'postgraduate diploma': 'Certificate',
+    'graduate certificate': 'Certificate',
+    'postgraduate certificate': 'Certificate',
+    'doctor of philosophy': 'PhD',
+    'doctor of business administration': 'PhD',
+    'juris doctor': 'MA',
   };
   if (commonMappings[valueLower]) {
     return commonMappings[valueLower];
@@ -647,15 +697,34 @@ function validateAndCorrectData(extractedData) {
 
   // Validate education history
   if (Array.isArray(corrected.education_history)) {
-    corrected.education_history = corrected.education_history.map(edu => ({
-      ...edu,
-      degreeType: validateFieldValue('degreeType', edu.degreeType, DEGREE_TYPE_OPTIONS),
-      generalField: validateFieldValue('generalField', edu.generalField, GENERAL_FIELD_OPTIONS),
-      specificField: validateFieldValue('specificField', edu.specificField, SPECIFIC_FIELD_OPTIONS),
-      country: validateFieldValue('country', edu.country, COUNTRY_OPTIONS),
-      startDate: validateAndCorrectDate(edu.startDate),
-      endDate: validateAndCorrectDate(edu.endDate),
-    }));
+    corrected.education_history = corrected.education_history.map(edu => {
+      const resolvedDegreeType = validateFieldValue('degreeType', edu.degreeType, DEGREE_TYPE_OPTIONS);
+
+      // Guard: prevent Master-level degrees from being misclassified as Associate
+      // The fuzzy matcher's partial match can match "Master of Accounting" to "AS" because "mASter" contains "AS"
+      let finalDegreeType = resolvedDegreeType;
+      if (typeof edu.degreeType === 'string' && ['AA', 'AS', 'AAS'].includes(resolvedDegreeType)) {
+        const rawLower = edu.degreeType.toLowerCase();
+        const masterKeywords = ['master', 'msc', 'mba', 'llm', 'maîtrise', 'maitrise', 'diplom', 'mas'];
+        if (masterKeywords.some(kw => rawLower.includes(kw))) {
+          // Force MSc as safe default — the partial match in fuzzyMatchToOptions matched "AS"
+          // because "mASter" contains the substring "as". MSc is the correct default for
+          // any master-level degree that doesn't have a more specific commonMapping.
+          finalDegreeType = 'MSc';
+          corrections.push(`Corrected degreeType from ${resolvedDegreeType} to MSc (master-level degree)`);
+        }
+      }
+
+      return {
+        ...edu,
+        degreeType: finalDegreeType,
+        generalField: validateFieldValue('generalField', edu.generalField, GENERAL_FIELD_OPTIONS),
+        specificField: validateFieldValue('specificField', edu.specificField, SPECIFIC_FIELD_OPTIONS),
+        country: validateFieldValue('country', edu.country, COUNTRY_OPTIONS),
+        startDate: validateAndCorrectDate(edu.startDate),
+        endDate: validateAndCorrectDate(edu.endDate),
+      };
+    });
   }
 
   // Validate professional experience
@@ -678,18 +747,38 @@ function validateAndCorrectData(extractedData) {
   }
 
   if (Array.isArray(corrected.soft_skills)) {
-    corrected.soft_skills = corrected.soft_skills.map(skill => ({
-      ...skill,
-      level: validateFieldValue('level', skill.level, SKILL_PROFICIENCY_OPTIONS),
-    }));
+    // Filter out hard/domain skills that are never soft skills
+    const notSoftSkills = [
+      'project management', 'sales', 'budgeting', 'market analysis',
+      'business management', 'compliance', 'accounting', 'financial analysis',
+      'business development', 'marketing', 'operations management',
+      'supply chain', 'risk management', 'data analysis', 'quality management',
+    ];
+    corrected.soft_skills = corrected.soft_skills
+      .filter(skill => {
+        const nameLower = (skill.name || '').toLowerCase().trim();
+        const isBlocked = notSoftSkills.some(blocked => nameLower === blocked);
+        if (isBlocked) corrections.push(`Removed "${skill.name}" from soft_skills (domain/business skill)`);
+        return !isBlocked;
+      })
+      .map(skill => ({
+        ...skill,
+        level: validateFieldValue('level', skill.level, SKILL_PROFICIENCY_OPTIONS),
+      }));
   }
 
   // Validate languages
   if (Array.isArray(corrected.base_languages)) {
-    corrected.base_languages = corrected.base_languages.map(lang => ({
-      ...lang,
-      proficiency: validateFieldValue('proficiency', lang.proficiency, LANGUAGE_PROFICIENCY_OPTIONS),
-    }));
+    corrected.base_languages = corrected.base_languages.map(lang => {
+      const validatedProficiency = validateFieldValue('proficiency', lang.proficiency, LANGUAGE_PROFICIENCY_OPTIONS);
+      const result = { ...lang };
+      if (validatedProficiency && validatedProficiency !== 'None') {
+        result.proficiency = validatedProficiency;
+      } else {
+        delete result.proficiency;
+      }
+      return result;
+    });
   }
 
   // Validate certifications dates
@@ -1026,8 +1115,8 @@ function getParsingInstructions() {
       "isCurrent": "boolean | null"
     }],
     "technical_skills": [{ "name": "string", "level": "${skillLevels}" }],
-    "soft_skills": [{ "name": "string", "level": "${skillLevels}" }],
-    "industry_specific_skills": [{ "industry": "string (${industrySkills})", "name": "string", "level": "${skillLevels}" }],
+    "soft_skills": [{ "name": "string", "level": "${skillLevels}" }], // Infer from experience descriptions — see Rule 11. Empty arrays are almost never correct for experienced professionals.
+    "industry_specific_skills": [{ "industry": "string (${industrySkills})", "name": "string", "level": "${skillLevels}" }], // Domain expertise, methodologies, business knowledge — see Rule 11. Empty arrays are almost never correct for experienced professionals.
     "base_languages": [{ "language": "string", "proficiency": "${languageProficiencies}" }],
     "certifications": [{
       "name": "string",
@@ -1084,16 +1173,59 @@ CRITICAL EXTRACTION RULES:
 
 10. **PROJECTS** - Extract personal projects, portfolio projects, or significant academic projects with technologies used.
 
-11. **SKILLS CLASSIFICATION** - Classify skills appropriately:
-    - technical_skills: Programming languages, frameworks, tools, software
-    - soft_skills: Communication, leadership, problem-solving, teamwork, etc.
-      Infer soft skills from experience descriptions, not just explicit skill lists. Look for:
-      - "relationship management" / "stakeholder management" → Relationship Management
-      - "led team" / "managed team" → Leadership
-      - "cross-functional" / "collaborated" → Collaboration
-      - "mentored" / "trained" → Mentoring
-      - "negotiated" / "contracts" → Negotiation
-    - industry_specific_skills: Domain knowledge, methodologies, and business expertise. This includes trading strategies, financial instruments, risk frameworks, market analysis approaches, regulatory knowledge, and sector-specific expertise (e.g., "Energy & Commodities Trading", "Derivatives & Hedging", "VaR & Stress Testing", "Portfolio Optimization", "Financial Modeling"). Do NOT put domain/business expertise into technical_skills — if a skill is about WHAT the person knows about a domain, it goes here, not in technical_skills.
+11. **SKILLS CLASSIFICATION** - Use the "Tool vs. Trait vs. Domain" test for EVERY skill:
+    - **technical_skills** = TOOLS: Software, programming languages, frameworks, platforms, and technical tools the person uses to do their work.
+      Examples: Python, Excel, Bloomberg, SQL, Tableau, SAP, AutoCAD, MATLAB.
+      NOT technical: Financial Modeling, Project Management, Trade Surveillance, Risk Analysis, Market Research, Supply Chain Management — these are domain expertise, not tools.
+    - **soft_skills** = TRAITS: Interpersonal and behavioral competencies — how someone works, not what they work on.
+      Examples: Leadership, Communication, Teamwork, Problem Solving, Negotiation, Mentoring, Adaptability, Relationship Management, Collaboration, Analytical Thinking, Attention to Detail, Time Management, Conflict Resolution.
+      NOT soft skills: Project Management, Sales, Budgeting, Market Analysis, Business Development, Compliance, Accounting, Financial Analysis, Operations Management, Data Analysis — these are domain/business skills.
+    - **industry_specific_skills** = DOMAIN: Business knowledge, methodologies, sector-specific expertise, and professional competencies that define what the person knows about their industry.
+      Examples: Financial Modeling, Derivatives & Hedging, Risk Management, Portfolio Optimization, Regulatory Compliance, Trade Surveillance, Supply Chain Management, Market Analysis, Business Strategy, M&A, Audit, Tax Advisory, Clinical Research, Drug Development.
+
+    **Inference principles for soft_skills** — Do NOT rely only on explicit "Skills" sections. Actively scan experience descriptions for behavioral evidence:
+    - Evidence of leading people or teams → Leadership
+    - Evidence of managing stakeholders, clients, or relationships → Relationship Management, Communication
+    - Evidence of cross-functional work or collaboration → Collaboration, Teamwork
+    - Evidence of mentoring, coaching, or training others → Mentoring
+    - Evidence of negotiating deals, contracts, or agreements → Negotiation
+    - Evidence of solving complex problems or analytical work → Problem Solving, Analytical Thinking
+    - Evidence of presenting to boards, committees, or conferences → Communication, Presentation Skills
+    - **Seniority heuristic (management roles only):** If the candidate manages people or stakeholders in a Director, VP, Head, C-level, or Partner role, infer Leadership, Communication, and Relationship Management unless contradicted by the CV. This does NOT apply to senior individual contributors (researchers, traders, engineers) without people management evidence.
+
+    **Inference principles for industry_specific_skills** — Scan job titles, responsibilities, and achievements for domain expertise:
+    - A trader's strategies and instruments → their trading domain skills
+    - A risk analyst's frameworks and methodologies → risk management skills
+    - An accountant's specializations → audit, tax, financial reporting skills
+    - A consultant's practice areas → their advisory domain skills
+
+    **Quantity expectations:** Aim for 3-8 soft skills and 3-10 industry-specific skills for experienced professionals (5+ years). However, ONLY include skills with clear evidence in the CV — do not invent skills to fill a quota. For junior profiles or very brief CVs, fewer skills are acceptable.
+
+11b. **DEGREE TYPE CLASSIFICATION** - Use this two-step decision tree to classify degreeType:
+
+    **Step 1 — Determine the LEVEL of the degree:**
+    - Doctoral (PhD, DPhil, Dr., Doctorate, EdD, DBA) → 'PhD'
+    - Master-level → Go to Step 2
+    - Bachelor-level (Bachelor, BTech, BCom, Licence [French 3-year]) → 'BSc' for STEM/Business, 'BA' for Arts/Humanities/Social Sciences
+    - Secondary school (Matura, Abitur, A-Levels, High School Diploma, Baccalauréat) → match the specific type from the options
+    - Sub-bachelor vocational / 2-year programs → match the specific type from the options
+
+    **Step 2 — For master-level degrees, map by specialization:**
+    - MBA (Master of Business Administration, Executive MBA) → 'MBA'
+    - MAS (Master of Advanced Studies — a Swiss/European continuing education degree) → 'MAS'
+    - MSc (Master of Science, Master of Engineering, MTech, technical/quantitative fields) → 'MSc'
+    - MA (Master of Arts, humanities, social sciences, education) → 'MA'
+    - If unclear whether MSc or MA, default to 'MSc' for STEM/Business fields and 'MA' for Arts/Humanities.
+
+    **International equivalences (CRITICAL):**
+    - French: Master 1, Master 2, Maîtrise → 'MSc' or 'MA' by field. Grande École diploma → 'MSc'. French Licence = 3-year bachelor → 'BA' or 'BSc'. Do NOT confuse Licence with professional licenses (CPA, CFA) which are certifications.
+    - German: Diplom, Diplom-Ingenieur, Diplom-Kaufmann → 'MSc' (master-equivalent). Vordiplom → 'BSc'.
+    - Indian: BTech → 'BSc', MTech → 'MSc', BCom → 'BSc'.
+    - Law: LLB → 'BA', LLM → 'MA', JD → 'MA'.
+    - Engineering diplomas: 'BSc' minimum, 'MSc' if 5-year integrated program.
+    - Postgraduate Diploma / Graduate Certificate → 'Certificate'.
+
+    **WARNING: AS (Associate of Science) and AA (Associate of Arts) are ONLY for US-style 2-year community college degrees. Do NOT assign Associate degrees to European, Asian, or other international qualifications.**
 
 12. **EDUCATION DETAILS** - Extract grades, GPA, class rank, thesis information, and relevant coursework when available.
 
@@ -1184,12 +1316,20 @@ CRITICAL EXTRACTION RULES:
     - "Research Assistant" → "Research Assistant" (keep as-is)
 
 18. **LANGUAGE PROFICIENCY MAPPING** - Map language proficiency levels from CVs to these exact values:
-    - Native / Mother tongue / C2 → 'Fluent'
-    - Fluent / Proficient / C1-C2 → 'Fluent'
-    - Advanced / C1 → 'Advanced'
-    - Intermediate / Conversational / Working proficiency / B1-B2 → 'Intermediate'
-    - Beginner / Elementary / Basic / A1-A2 → 'Beginner'
-    Always use the exact value string (e.g., 'Fluent', not 'Native' or 'C2').
+    - Native / Mother tongue / Muttersprache / Langue maternelle → 'Native'
+    - Fluent / C2 / Proficient / Courant / Fließend / Full professional proficiency → 'Fluent'
+    - Advanced / Professional working proficiency / Avancé / Fortgeschritten / C1 → 'Advanced'
+    - Intermediate / Conversational / Working proficiency / Limited working proficiency / Intermédiaire / Grundkenntnisse / B1-B2 → 'Intermediate'
+    - Beginner / Elementary / Basic / Notions / Anfänger / A1-A2 → 'Beginner'
+    Always use the exact value string (e.g., 'Native', 'Fluent', not 'C2').
+
+    **Default behavior when proficiency is not stated:**
+    - Candidate's home country language (inferred from nationality/address) → 'Native'
+    - Language of education (university degree taught in that language) → 'Advanced'
+    - Other mentioned languages with no level → 'Intermediate'
+    If you truly cannot determine proficiency from any context, use 'Intermediate' rather than null.
+
+    **Language inference:** If no explicit Languages section exists, still extract languages where there is clear evidence: the candidate's apparent native language (from name/country), and any language in which they demonstrably worked or studied (e.g., English-language education, work in English-speaking countries).
 
 EXPECTED JSON OUTPUT STRUCTURE:
 ${jsonStructure}`;
@@ -1308,7 +1448,6 @@ function sanitizeCompanyNames(text, professionalExperience) {
 async function generateProfileBio(extractedData) {
   const systemPrompt = `
     You are a Senior Executive Search Consultant at "SetSelect," a prestigious boutique recruitment firm in Zurich, Switzerland.
-    Your specialty is the Commodities, Energy, and Trading sectors.
 
     Your Task:
     Write a concise, high-impact professional profile summary (3-4 sentences max) for a candidate based on the provided JSON data.
@@ -1316,7 +1455,8 @@ async function generateProfileBio(extractedData) {
     Tone & Style:
     - Professional, objective, and impressive.
     - Third-person perspective (e.g., "An experienced...", "This professional...").
-    - ANONYMOUS: Do not use names, gendered pronouns (he/she), or specific company names. Use "they," "the candidate," or "this professional." Refer to employers generically (e.g., "a major trading house," "a leading commodities firm," "a global energy company").
+    - ANONYMOUS: Do not use names, gendered pronouns (he/she), or specific company names. Use "they," "the candidate," or "this professional." Refer to employers generically (e.g., "a major firm," "a leading industry player," "a global company").
+    - SECTOR-NEUTRAL: Write the bio based on the candidate's actual background. Do NOT default to commodities, energy, or trading language unless the candidate's experience is clearly in those sectors. Match the industry framing to the candidate's domain.
     - Swiss Context: Be precise about work permits and locations.
 
     Structure:
