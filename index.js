@@ -33,6 +33,10 @@ const app = express();
 app.use(express.json());
 const PORT = process.env.PORT || 3002;
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
+if (!INTERNAL_API_KEY) {
+  console.error('FATAL: INTERNAL_API_KEY environment variable is not set. Exiting.');
+  process.exit(1);
+}
 const ENABLE_TWO_PASS = process.env.ENABLE_TWO_PASS !== 'false'; // Default true
 const ENABLE_INFERENCE = process.env.ENABLE_INFERENCE !== 'false'; // Default true
 const ENABLE_PROFILE_PICTURE_EXTRACTION = process.env.ENABLE_PROFILE_PICTURE_EXTRACTION !== 'false'; // Default true
@@ -332,7 +336,12 @@ If none of the images appear to be a professional profile picture (e.g., they're
         return { imageIndex: null, confidence: 0, reason: 'Failed to parse Vision API response' };
       }
 
-      const result = JSON.parse(jsonMatch[0]);
+      let result;
+      try {
+        result = JSON.parse(jsonMatch[0]);
+      } catch {
+        return { imageIndex: null, confidence: 0, reason: 'Malformed JSON from Vision API' };
+      }
 
       // Convert 1-based index to 0-based, validate
       const imageIndex = result.hasProfilePicture && result.imageIndex
@@ -1711,7 +1720,12 @@ async function parseCV(input, jobId, market) {
     });
   }
 
-  let extractedData = JSON.parse(firstPassCompletion.choices[0].message.content);
+  let extractedData;
+  try {
+    extractedData = JSON.parse(firstPassCompletion.choices[0].message.content);
+  } catch {
+    throw new Error('OpenAI returned malformed JSON in first pass');
+  }
   console.log(`[Job ${jobId}] First pass completed. Fields extracted: ${Object.keys(extractedData).length}`);
   console.log(`[Job ${jobId}] OpenAI returned years_of_experience: "${extractedData.years_of_experience}" (type: ${typeof extractedData.years_of_experience})`);
 
@@ -1797,7 +1811,7 @@ app.get('/health', (req, res) => {
 // Main parsing endpoint
 app.post('/api/v1/parse', (req, res, next) => {
   const providedKey = req.headers['x-internal-api-key'];
-  if (!INTERNAL_API_KEY || providedKey !== INTERNAL_API_KEY) {
+  if (providedKey !== INTERNAL_API_KEY) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
@@ -1806,6 +1820,11 @@ app.post('/api/v1/parse', (req, res, next) => {
 
   if (!jobId || !storagePath) {
     return res.status(400).json({ error: 'jobId and storagePath are required.' });
+  }
+
+  const VALID_MARKETS = ['CH', 'BG'];
+  if (market && !VALID_MARKETS.includes(market)) {
+    return res.status(400).json({ error: `Invalid market. Must be one of: ${VALID_MARKETS.join(', ')}` });
   }
 
   // Immediately respond with 202 Accepted
