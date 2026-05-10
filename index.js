@@ -1838,7 +1838,10 @@ app.post('/api/v1/parse', (req, res, next) => {
 
   // Process asynchronously
   try {
-    await supabase.from('cv_parsing_jobs').update({ status: 'processing' }).eq('id', jobId);
+    const { error: statusError } = await supabase.from('cv_parsing_jobs').update({ status: 'processing' }).eq('id', jobId);
+    if (statusError) {
+      throw new Error(`Failed to set job status to processing: ${statusError.message}`);
+    }
 
     // Fetch profile_id from cv_parsing_jobs record
     const { data: jobRecord, error: jobFetchError } = await supabase
@@ -2005,11 +2008,15 @@ app.post('/api/v1/parse', (req, res, next) => {
 
   } catch (error) {
     console.error(`[Job ${jobId}] CV parsing failed:`, error.message);
-    await supabase.from('cv_parsing_jobs').update({
-      status: 'failed',
-      error_message: error.message,
-      completed_at: new Date().toISOString()
-    }).eq('id', jobId);
+    try {
+      await supabase.from('cv_parsing_jobs').update({
+        status: 'failed',
+        error_message: error.message,
+        completed_at: new Date().toISOString()
+      }).eq('id', jobId);
+    } catch (failErr) {
+      console.error(`[Job ${jobId}] CRITICAL: Failed to mark job as failed:`, failErr.message);
+    }
   }
 });
 
