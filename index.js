@@ -54,8 +54,14 @@ const openai = useAzureOpenAI
       endpoint: process.env.AZURE_OPENAI_ENDPOINT,
       apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-10-21',
       deployment: process.env.AZURE_OPENAI_DEPLOYMENT_PARSING || process.env.OPENAI_MODEL_PARSING || 'gpt-4.1',
+      maxRetries: 3,
+      timeout: 120_000,
     })
-  : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  : new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      maxRetries: 3,
+      timeout: 120_000,
+    });
 
 // ==========================================
 // CONSTANTS
