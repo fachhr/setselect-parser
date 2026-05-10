@@ -342,6 +342,19 @@ export const LOCATION_OPTIONS = [
     { value: "Other", label: "Other (Specify Below)" }
 ];
 
+export const LOCATION_OPTIONS_BG = [
+    { value: "Sofia", label: "Sofia" },
+    { value: "Plovdiv", label: "Plovdiv" },
+    { value: "Varna", label: "Varna" },
+    { value: "Burgas", label: "Burgas" },
+    { value: "Stara Zagora", label: "Stara Zagora" },
+    { value: "Ruse", label: "Ruse" },
+    { value: "Pleven", label: "Pleven" },
+    { value: "Bulgaria", label: "All Bulgaria" },
+    { value: "Remote", label: "Remote" },
+    { value: "Other", label: "Other" }
+];
+
 export const INDUSTRY_PREFERENCE_OPTIONS = [
     { value: "Finance",          label: "Finance" },
     { value: "Marketing",        label: "Marketing" },

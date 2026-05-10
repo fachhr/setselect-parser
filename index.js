@@ -17,9 +17,14 @@ import {
   DURATION_OPTIONS,
   JOB_TYPE_OPTIONS,
   LOCATION_OPTIONS,
+  LOCATION_OPTIONS_BG,
   INDUSTRY_PREFERENCE_OPTIONS,
   FUNCTIONAL_EXPERTISE_OPTIONS,
 } from './formOptions.js';
+
+function getLocationOptionsForMarket(market) {
+  return market === 'BG' ? LOCATION_OPTIONS_BG : LOCATION_OPTIONS;
+}
 
 // ==========================================
 // INITIALIZATION
@@ -617,6 +622,25 @@ function fuzzyMatchToOptions(value, optionsArray, threshold = 0.7) {
     'doctor of philosophy': 'PhD',
     'doctor of business administration': 'PhD',
     'juris doctor': 'MA',
+    // Additional degree mappings (from audit findings)
+    'abogada': 'BA',
+    'abogado': 'BA',
+    'licenciada en derecho': 'BA',
+    'licenciado en derecho': 'BA',
+    'beng': 'BSc',
+    'meng': 'MSc',
+    'grande école': 'MSc',
+    'grande ecole': 'MSc',
+    'ingénieur': 'MSc',
+    'ingenieur': 'MSc',
+    'doctor of medicine': 'PhD',
+    'doctor of laws': 'PhD',
+    'habilitation': 'PhD',
+    'state examination': 'MSc',
+    'staatsexamen': 'MSc',
+    'pg diploma': 'Certificate',
+    'pgdip': 'Certificate',
+    'advanced diploma': 'Certificate',
   };
   if (commonMappings[valueLower]) {
     return commonMappings[valueLower];
@@ -658,7 +682,7 @@ function validateFieldValue(fieldName, value, optionsArray = null) {
 }
 
 // Apply validation and correction to all extracted data
-function validateAndCorrectData(extractedData) {
+function validateAndCorrectData(extractedData, market) {
   const corrected = { ...extractedData };
   const corrections = [];
 
@@ -710,6 +734,16 @@ function validateAndCorrectData(extractedData) {
           // any master-level degree that doesn't have a more specific commonMapping.
           finalDegreeType = 'MSc';
           corrections.push(`Corrected degreeType from ${resolvedDegreeType} to MSc (master-level degree)`);
+        }
+      }
+
+      // Guard: prevent university degrees from being misclassified as High School Diploma
+      if (typeof edu.degreeType === 'string' && finalDegreeType === 'High School Diploma') {
+        const rawLower = edu.degreeType.toLowerCase();
+        const universityKeywords = ['diploma', 'diplom', 'degree', 'bachelor', 'licence', 'laurea'];
+        if (universityKeywords.some(kw => rawLower.includes(kw)) && edu.universityName) {
+          finalDegreeType = 'BSc';
+          corrections.push(`Corrected degreeType from High School Diploma to BSc (university-level degree)`);
         }
       }
 
@@ -798,8 +832,9 @@ function validateAndCorrectData(extractedData) {
   }
 
   if (Array.isArray(corrected.desired_locations)) {
+    const locationOpts = getLocationOptionsForMarket(market);
     corrected.desired_locations = corrected.desired_locations
-      .map(loc => fuzzyMatchToOptions(loc, LOCATION_OPTIONS))
+      .map(loc => fuzzyMatchToOptions(loc, locationOpts))
       .filter(Boolean);
   }
 
@@ -1047,7 +1082,7 @@ function mergeFunctionalExpertise(userExpertise, parserExpertise) {
 // ==========================================
 
 // Get parsing instructions (rules + JSON schema) — shared between PDF and DOCX paths
-function getParsingInstructions() {
+function getParsingInstructions(market) {
   // Dynamically generate all possible option strings
   const countries = getOptionsString(COUNTRY_OPTIONS);
   const generalFields = getOptionsString(GENERAL_FIELD_OPTIONS);
@@ -1057,7 +1092,7 @@ function getParsingInstructions() {
   const skillLevels = getOptionsString(SKILL_PROFICIENCY_OPTIONS);
   const durations = getOptionsString(DURATION_OPTIONS);
   const jobTypes = getOptionsStringForSimpleArray(JOB_TYPE_OPTIONS);
-  const locations = getOptionsString(LOCATION_OPTIONS);
+  const locations = getOptionsString(getLocationOptionsForMarket(market));
   const industries = getOptionsString(INDUSTRY_PREFERENCE_OPTIONS);
 
   const jsonStructure = `
@@ -1122,7 +1157,7 @@ function getParsingInstructions() {
       "credentialId": "string | null",
       "url": "string (verification URL) | null"
     }],
-    "professional_interests": ["string"],
+    "professional_interests": ["string"], // Career-related interests only — see Rule 14b
     "extracurricular_activities": [{ "organization": "string", "role": "string | null", "achievement": "string | null" }],
     "base_projects": [{
       "projectName": "string",
@@ -1172,7 +1207,7 @@ CRITICAL EXTRACTION RULES:
 11. **SKILLS CLASSIFICATION** - Use the "Tool vs. Trait vs. Domain" test for EVERY skill:
     - **technical_skills** = TOOLS: Software, programming languages, frameworks, platforms, and technical tools the person uses to do their work.
       Examples: Python, Excel, Bloomberg, SQL, Tableau, SAP, AutoCAD, MATLAB.
-      NOT technical: Financial Modeling, Project Management, Trade Surveillance, Risk Analysis, Market Research, Supply Chain Management — these are domain expertise, not tools.
+      NOT technical: Financial Modeling, Project Management, Trade Surveillance, Risk Analysis, Market Research, Supply Chain Management, Demand Forecasting, Business Strategy, Trading Strategies, Physical Gas & Power Trading, Cross-border Capacities, AI-driven Pricing, Regulatory Compliance, Portfolio Management, Audit, M&A Advisory — these are domain expertise (industry_specific_skills), not tools. If you cannot install, download, or log into it, it is NOT a technical skill.
     - **soft_skills** = TRAITS: Interpersonal and behavioral competencies — how someone works, not what they work on.
       Examples: Leadership, Communication, Teamwork, Problem Solving, Negotiation, Mentoring, Adaptability, Relationship Management, Collaboration, Analytical Thinking, Attention to Detail, Time Management, Conflict Resolution.
       NOT soft skills: Project Management, Sales, Budgeting, Market Analysis, Business Development, Compliance, Accounting, Financial Analysis, Operations Management, Data Analysis — these are domain/business skills.
@@ -1188,13 +1223,28 @@ CRITICAL EXTRACTION RULES:
     - Evidence of negotiating deals, contracts, or agreements → Negotiation
     - Evidence of solving complex problems or analytical work → Problem Solving, Analytical Thinking
     - Evidence of presenting to boards, committees, or conferences → Communication, Presentation Skills
+    - Evidence of overseeing, supervising, or directing operations, teams, or departments → Leadership
+    - Evidence of coordinating across teams, departments, or geographies → Coordination, Collaboration
+    - Evidence of driving initiatives, spearheading projects, or championing change → Initiative, Leadership
+    - Evidence of building, maintaining, or growing client/partner relationships → Relationship Management
+    - Evidence of training, onboarding, or developing junior staff → Mentoring
+    - Evidence of influencing decisions, persuading stakeholders → Influencing, Communication
+    - Evidence of adapting to new markets, roles, or challenges → Adaptability
+    - Evidence of delivering under pressure, meeting tight deadlines → Resilience, Time Management
+    - Evidence of hiring, performance reviews, or team-building → Leadership, People Management
+    - Evidence of reporting to boards, C-suite, or senior management → Communication, Stakeholder Management
     - **Seniority heuristic (management roles only):** If the candidate manages people or stakeholders in a Director, VP, Head, C-level, or Partner role, infer Leadership, Communication, and Relationship Management unless contradicted by the CV. This does NOT apply to senior individual contributors (researchers, traders, engineers) without people management evidence.
 
-    **Inference principles for industry_specific_skills** — Scan job titles, responsibilities, and achievements for domain expertise:
+    **Inference principles for industry_specific_skills** — Do NOT rely only on explicit "Skills" or "Key Competencies" sections. Actively scan experience descriptions, bullet points, and achievements for domain expertise evidence:
+    - Responsibilities describing business processes → the domain skill (e.g., "managed LNG flow optimization" → LNG Trading, Supply Chain)
+    - Achievements with domain-specific metrics → the relevant skill (e.g., "reduced VaR by 30%" → Risk Management)
+    - Industry-specific methodologies or frameworks mentioned → the domain skill (e.g., "implemented ETRM system" → Energy Trading, Systems Implementation)
+    - Client types or deal types described → the domain context (e.g., "advised on $500M M&A transactions" → M&A Advisory)
     - A trader's strategies and instruments → their trading domain skills
     - A risk analyst's frameworks and methodologies → risk management skills
     - An accountant's specializations → audit, tax, financial reporting skills
     - A consultant's practice areas → their advisory domain skills
+    - **IMPORTANT: Every industry_specific_skill MUST be grounded in specific text from the CV. Do NOT infer domain skills solely from job titles or company names. If the CV says "Trading Operations Manager" but the bullet points only describe admin tasks, do NOT infer trading expertise.**
 
     **Quantity expectations:** Aim for 3-8 soft skills and 3-10 industry-specific skills for experienced professionals (5+ years). However, ONLY include skills with clear evidence in the CV — do not invent skills to fill a quota. For junior profiles or very brief CVs, fewer skills are acceptable.
 
@@ -1233,6 +1283,8 @@ CRITICAL EXTRACTION RULES:
 13. **JOB PREFERENCES** - If the CV mentions career goals, desired roles, preferred locations, or availability, extract this into the desired_* fields.
 
 14. **BOOLEAN FIELDS** - Set isCurrent to true for ongoing education or current positions.
+
+14b. **PROFESSIONAL INTERESTS** - Only include genuine professional and career-related interests (e.g., "Renewable Energy", "Fintech", "Emerging Markets", "Sustainability"). Do NOT include personal hobbies, sports, or leisure activities (e.g., skiing, travel, cooking, Formula 1, yoga, cycling, backpacking, padel). If the CV only lists hobbies and no professional interests, return an empty array.
 
 15. **FUNCTIONAL EXPERTISE EXTRACTION** - Use a two-step approach for functional expertise (for commodities/energy/finance talent):
 
@@ -1337,12 +1389,12 @@ ${jsonStructure}`;
 }
 
 // Create text-based parsing prompt for DOCX HTML or plain text content
-function createTextParsingPrompt(content, format = 'html') {
+function createTextParsingPrompt(content, format = 'html', market) {
   if (!content || typeof content !== 'string') {
     throw new Error('Invalid content provided for parsing');
   }
 
-  const instructions = getParsingInstructions();
+  const instructions = getParsingInstructions(market);
 
   const preamble = format === 'html'
     ? `The CV content below is in HTML format extracted from a DOCX file. The HTML tags (headings, lists,
@@ -1446,9 +1498,13 @@ function sanitizeCompanyNames(text, professionalExperience) {
  * @param {object} extractedData - The parsed candidate data
  * @returns {Promise<string|null>} - Generated bio or null on failure
  */
-async function generateProfileBio(extractedData) {
+async function generateProfileBio(extractedData, market) {
+  const marketContext = market === 'BG'
+    ? 'in Sofia, Bulgaria. Be precise about work permits and locations relevant to the Bulgarian market.'
+    : 'in Zurich, Switzerland. Be precise about work permits and locations relevant to the Swiss market.';
+
   const systemPrompt = `
-    You are a Senior Executive Search Consultant at "SetSelect," a prestigious boutique recruitment firm in Zurich, Switzerland.
+    You are a Senior Executive Search Consultant at "SetSelect," a prestigious boutique recruitment firm ${marketContext}
 
     Your Task:
     Write a concise, high-impact professional profile summary (3-4 sentences max) for a candidate based on the provided JSON data.
@@ -1458,7 +1514,6 @@ async function generateProfileBio(extractedData) {
     - Third-person perspective (e.g., "An experienced...", "This professional...").
     - ANONYMOUS: Do not use names, gendered pronouns (he/she), or specific company names. Use "they," "the candidate," or "this professional." Refer to employers generically (e.g., "a major firm," "a leading industry player," "a global company").
     - SECTOR-NEUTRAL: Write the bio based on the candidate's actual background. Do NOT default to commodities, energy, or trading language unless the candidate's experience is clearly in those sectors. Match the industry framing to the candidate's domain.
-    - Swiss Context: Be precise about work permits and locations.
 
     Structure:
     1. Opening: Seniority + Role.
@@ -1467,6 +1522,10 @@ async function generateProfileBio(extractedData) {
     4. Closing: Availability and key strengths.
   `;
 
+  const locationNote = market === 'BG'
+    ? '- Bulgarian cities: Sofia, Plovdiv, Varna, Burgas, etc.'
+    : "- Expand Canton codes (e.g., 'ZG' -> 'Zug', 'ZH' -> 'Zurich', 'TI' -> 'Ticino').";
+
   const userPrompt = `
     Please generate the profile summary for this candidate:
 
@@ -1474,7 +1533,7 @@ async function generateProfileBio(extractedData) {
 
     Note:
     - The candidate's HOME location is in contact_address (city, country). Do NOT use the professional_experience city/country as the candidate's location — those are EMPLOYER locations, not where the candidate lives.
-    - Expand Canton codes (e.g., 'ZG' -> 'Zug', 'ZH' -> 'Zurich', 'TI' -> 'Ticino').
+    ${locationNote}
     - If there is a 'highlight' field with a quote, paraphrase it into a professional achievement statement.
     - Salary should NOT be mentioned in the bio.
     - Do not mention years of experience (already displayed separately).
@@ -1573,7 +1632,7 @@ ${JSON.stringify(extractedData, null, 2)}
 // MAIN PARSING LOGIC WITH TWO-STAGE APPROACH
 // ==========================================
 
-async function parseCV(input, jobId) {
+async function parseCV(input, jobId, market) {
   if (!input || !input.type) {
     throw new Error('Invalid input provided — expected { type, buffer } or { type, content }');
   }
@@ -1584,7 +1643,7 @@ async function parseCV(input, jobId) {
   console.log(`[Job ${jobId}] Starting first-pass comprehensive extraction (${input.type} input)...`);
 
   // FIRST PASS: Comprehensive extraction
-  const instructions = getParsingInstructions();
+  const instructions = getParsingInstructions(market);
   let messages;
   let cvTextForSecondPass; // plain text fallback for two-pass focused prompts
 
@@ -1611,7 +1670,7 @@ async function parseCV(input, jobId) {
     // DOCX HTML path
     messages = [{
       role: 'user',
-      content: createTextParsingPrompt(input.content)
+      content: createTextParsingPrompt(input.content, 'html', market)
     }];
     cvTextForSecondPass = input.content;
   }
@@ -1634,7 +1693,7 @@ async function parseCV(input, jobId) {
       cvTextForSecondPass = pdfData.text;
       messages = [{
         role: 'user',
-        content: createTextParsingPrompt(pdfData.text, 'text')
+        content: createTextParsingPrompt(pdfData.text, 'text', market)
       }];
       firstPassCompletion = await openai.chat.completions.create({
         model: OPENAI_MODEL_PARSING,
@@ -1658,7 +1717,7 @@ async function parseCV(input, jobId) {
 
   // VALIDATION & AUTO-CORRECTION
   console.log(`[Job ${jobId}] Applying validation and auto-correction...`);
-  const { corrected, corrections } = validateAndCorrectData(extractedData);
+  const { corrected, corrections } = validateAndCorrectData(extractedData, market);
   extractedData = corrected;
 
   if (corrections.length > 0) {
@@ -1743,7 +1802,7 @@ app.post('/api/v1/parse', (req, res, next) => {
   }
   next();
 }, async (req, res) => {
-  const { jobId, storagePath } = req.body;
+  const { jobId, storagePath, market } = req.body;
 
   if (!jobId || !storagePath) {
     return res.status(400).json({ error: 'jobId and storagePath are required.' });
@@ -1787,7 +1846,7 @@ app.post('/api/v1/parse', (req, res, next) => {
       })()
     ]);
 
-    const extractedData = await parseCV(cvInput, jobId);
+    const extractedData = await parseCV(cvInput, jobId, market);
 
     // Add profile picture path to extracted data
     if (profilePicturePath) {
@@ -1796,7 +1855,7 @@ app.post('/api/v1/parse', (req, res, next) => {
 
     // Generate professional profile bio
     console.log(`[Job ${jobId}] Generating professional bio...`);
-    const profileBio = await generateProfileBio(extractedData);
+    const profileBio = await generateProfileBio(extractedData, market);
     if (profileBio) {
       extractedData.profile_bio = profileBio;
       console.log(`[Job ${jobId}] Bio generated: ${profileBio.substring(0, 50)}...`);
